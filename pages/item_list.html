@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>거래처관리</title>
+  <title>품목관리</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="../css/style.css">
   <style>
@@ -13,33 +13,32 @@
       align-items: center;
       margin-bottom: 1.5rem;
     }
-    .customer-section {
+    .item-section {
       background: #fff;
       border: 1px solid rgba(0,0,0,0.08);
       border-radius: 0.75rem;
       padding: 1.5rem;
       margin-bottom: 1.5rem;
     }
-    .customer-table {
+    .item-table {
       width: 100%;
       border-collapse: collapse;
       font-size: 0.9rem;
     }
-    .customer-table th,
-    .customer-table td {
+    .item-table th,
+    .item-table td {
       padding: 0.75rem;
       border: 1px solid #ddd;
       text-align: center;
     }
-    .customer-table th {
+    .item-table th {
       background: #f8f9fa;
       font-weight: 600;
     }
-    .customer-table td.left-align {
+    .item-table td.left-align {
       text-align: left;
     }
-    .customer-table input,
-    .customer-table select {
+    .item-table input {
       width: 100%;
       padding: 0.35rem;
       border: 1px solid #ddd;
@@ -107,12 +106,12 @@
     <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>거래관리</div>
     <ul class="sidebar-nav sidebar-sub">
       <li class="nav-item"><a class="nav-link" href="transaction_list.html">주문관리</a></li>
-      <li class="nav-item"><a class="nav-link" href="transaction_settlement.html">주문정산</a></li>
+      <li class="nav-item"><a class="nav-link" href="transaction_settlement.html">정산관리</a></li>
     </ul>
     <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>기준정보</div>
     <ul class="sidebar-nav sidebar-sub">
-      <li class="nav-item"><a class="nav-link active" href="customer_list.html">거래처관리</a></li>
-      <li class="nav-item"><a class="nav-link" href="item_list.html">품목관리</a></li>
+      <li class="nav-item"><a class="nav-link" href="customer_list.html">거래처관리</a></li>
+      <li class="nav-item"><a class="nav-link active" href="item_list.html">품목관리</a></li>
       <li class="nav-item"><a class="nav-link" href="form_upload.html">서식업로드</a></li>
     </ul>
     <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>재고관리</div>
@@ -130,29 +129,26 @@
 
   <main class="main-content">
     <div class="detail-header">
-      <h2>거래처관리</h2>
+      <h2>품목관리</h2>
       <div class="control-buttons">
         <button type="button" id="edit-btn" class="btn btn-primary">수정</button>
         <button type="button" id="save-btn" class="btn btn-success" style="display: none;">저장</button>
       </div>
     </div>
 
-    <div class="customer-section">
-      <table class="customer-table">
+    <div class="item-section">
+      <table class="item-table">
         <thead>
           <tr>
-            <th style="width: 40px;"><button type="button" id="add-customer-btn" class="add-row-btn">+</button></th>
-            <th>거래처명</th>
-            <th>대표자</th>
-            <th>사업자등록번호</th>
-            <th>업태</th>
-            <th>종목</th>
-            <th>전화번호</th>
-            <th>FAX</th>
-            <th>주소</th>
+            <th style="width: 40px;"><button type="button" id="add-item-btn" class="add-row-btn">+</button></th>
+            <th>품목명</th>
+            <th>규격</th>
+            <th>단위</th>
+            <th>단가</th>
+            <th>비고</th>
           </tr>
         </thead>
-        <tbody id="customer-tbody"></tbody>
+        <tbody id="item-tbody"></tbody>
       </table>
     </div>
   </main>
@@ -196,59 +192,50 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     let isEditMode = false;
-    let customers = [];
+    let items = [];
     const editBtn = document.getElementById('edit-btn');
     const saveBtn = document.getElementById('save-btn');
-    const addCustomerBtn = document.getElementById('add-customer-btn');
-    const tableBody = document.getElementById('customer-tbody');
-    const saveConfirmModal = new bootstrap.Modal(document.getElementById('saveConfirmModal'));
-    const saveConfirmBtn = document.getElementById('saveConfirmBtn');
+    const addItemBtn = document.getElementById('add-item-btn');
+    const tableBody = document.getElementById('item-tbody');
     const saveModal = new bootstrap.Modal(document.getElementById('saveModal'));
 
-    function loadCustomers() {
-      const saved = localStorage.getItem('customers');
+    function loadItems() {
+      const saved = localStorage.getItem('items');
       if (saved) {
-        customers = JSON.parse(saved);
+        items = JSON.parse(saved);
       } else {
-        customers = [
-          { name: '삼호건설', representative: '김영수', bizNum: '123-45-67890', industryType: '건설업', businessType: '종합건설', phone: '02-1234-5678', address: '서울시 강남구', fax: '02-1234-5679' },
-          { name: '대신산업', representative: '이준호', bizNum: '234-56-78901', industryType: '건설업', businessType: '토목공사', phone: '02-2345-6789', address: '서울시 서초구', fax: '02-2345-6790' },
-          { name: '성진토건', representative: '박민수', bizNum: '345-67-89012', industryType: '건설업', businessType: '건축공사', phone: '031-3456-7890', address: '경기도 수원시', fax: '031-3456-7891' }
+        items = [
+          { name: '철근', spec: 'SD400 20mm', unit: 'T', unitPrice: 650000, remark: '' },
+          { name: '시멘트', spec: '포틀랜드 시멘트', unit: '포', unitPrice: 7500, remark: '' },
+          { name: '모래', spec: '강모래 (세목)', unit: 'm³', unitPrice: 45000, remark: '' },
+          { name: '자갈', spec: '석회석 자갈', unit: 'm³', unitPrice: 38000, remark: '' },
+          { name: '합판', spec: '베니어합판 12mm', unit: '장', unitPrice: 25000, remark: '' }
         ];
       }
-      addCustomerBtn.disabled = true;
-      renderCustomers();
+      addItemBtn.disabled = true;
+      renderItems();
     }
 
-    function renderCustomers() {
-      tableBody.innerHTML = customers.map((customer, index) => `
+    function renderItems() {
+      tableBody.innerHTML = items.map((item, index) => `
         <tr>
           <td>
             <button type="button" class="minus-btn" data-index="${index}" ${!isEditMode ? 'disabled' : ''}>−</button>
           </td>
-          <td>
-            ${isEditMode ? `<input type="text" class="customer-name" value="${customer.name}" data-index="${index}">` : customer.name}
+          <td class="left-align">
+            ${isEditMode ? `<input type="text" class="item-name" value="${item.name}" data-index="${index}">` : item.name}
           </td>
           <td>
-            ${isEditMode ? `<input type="text" class="customer-representative" value="${customer.representative}" data-index="${index}">` : customer.representative}
+            ${isEditMode ? `<input type="text" class="item-spec" value="${item.spec}" data-index="${index}">` : item.spec}
           </td>
           <td>
-            ${isEditMode ? `<input type="text" class="customer-biznum" value="${customer.bizNum}" data-index="${index}">` : customer.bizNum}
+            ${isEditMode ? `<input type="text" class="item-unit" value="${item.unit}" data-index="${index}">` : item.unit}
           </td>
           <td>
-            ${isEditMode ? `<input type="text" class="customer-industrytype" value="${customer.industryType}" data-index="${index}">` : customer.industryType}
-          </td>
-          <td>
-            ${isEditMode ? `<input type="text" class="customer-businesstype" value="${customer.businessType}" data-index="${index}">` : customer.businessType}
-          </td>
-          <td>
-            ${isEditMode ? `<input type="text" class="customer-phone" value="${customer.phone}" data-index="${index}">` : customer.phone}
-          </td>
-          <td>
-            ${isEditMode ? `<input type="text" class="customer-fax" value="${customer.fax}" data-index="${index}">` : customer.fax}
+            ${isEditMode ? `<input type="number" class="item-unitprice" value="${item.unitPrice}" data-index="${index}">` : item.unitPrice.toLocaleString()}
           </td>
           <td class="left-align">
-            ${isEditMode ? `<input type="text" class="customer-address" value="${customer.address}" data-index="${index}">` : customer.address}
+            ${isEditMode ? `<input type="text" class="item-remark" value="${item.remark || ''}" data-index="${index}">` : (item.remark || '')}
           </td>
         </tr>
       `).join('');
@@ -262,8 +249,8 @@
       document.querySelectorAll('.minus-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const index = parseInt(e.target.dataset.index);
-          customers.splice(index, 1);
-          renderCustomers();
+          items.splice(index, 1);
+          renderItems();
         });
       });
     }
@@ -272,85 +259,49 @@
       isEditMode = !isEditMode;
       editBtn.style.display = isEditMode ? 'none' : 'block';
       saveBtn.style.display = isEditMode ? 'block' : 'none';
-      addCustomerBtn.disabled = !isEditMode;
-      renderCustomers();
+      addItemBtn.disabled = !isEditMode;
+      renderItems();
     }
 
-    function saveCustomers() {
-      const updatedCustomers = [];
+    function saveItems() {
+      const updatedItems = [];
       tableBody.querySelectorAll('tr').forEach(row => {
-        const nameInput = row.querySelector('.customer-name');
+        const nameInput = row.querySelector('.item-name');
         if (nameInput) {
-          updatedCustomers.push({
+          updatedItems.push({
             name: nameInput.value,
-            representative: row.querySelector('.customer-representative').value,
-            bizNum: row.querySelector('.customer-biznum').value,
-            industryType: row.querySelector('.customer-industrytype').value,
-            businessType: row.querySelector('.customer-businesstype').value,
-            phone: row.querySelector('.customer-phone').value,
-            address: row.querySelector('.customer-address').value,
-            fax: row.querySelector('.customer-fax').value
+            spec: row.querySelector('.item-spec').value,
+            unit: row.querySelector('.item-unit').value,
+            unitPrice: parseInt(row.querySelector('.item-unitprice').value) || 0,
+            remark: row.querySelector('.item-remark').value || ''
           });
         }
       });
-      customers = updatedCustomers;
-      localStorage.setItem('customers', JSON.stringify(customers));
+      items = updatedItems;
+      localStorage.setItem('items', JSON.stringify(items));
       isEditMode = false;
       editBtn.style.display = 'block';
       saveBtn.style.display = 'none';
-      addCustomerBtn.disabled = true;
-      renderCustomers();
+      addItemBtn.disabled = true;
+      renderItems();
       saveModal.show();
     }
 
     editBtn.addEventListener('click', toggleEditMode);
-    saveBtn.addEventListener('click', () => {
-      saveConfirmModal.show();
-    });
-    
-    saveConfirmBtn.addEventListener('click', () => {
-      const updatedCustomers = [];
-      tableBody.querySelectorAll('tr').forEach(row => {
-        const nameInput = row.querySelector('.customer-name');
-        if (nameInput) {
-          updatedCustomers.push({
-            name: nameInput.value,
-            representative: row.querySelector('.customer-representative').value,
-            bizNum: row.querySelector('.customer-biznum').value,
-            industryType: row.querySelector('.customer-industrytype').value,
-            businessType: row.querySelector('.customer-businesstype').value,
-            phone: row.querySelector('.customer-phone').value,
-            fax: row.querySelector('.customer-fax').value,
-            address: row.querySelector('.customer-address').value
-          });
-        }
-      });
-      customers = updatedCustomers;
-      localStorage.setItem('customers', JSON.stringify(customers));
-      isEditMode = false;
-      editBtn.style.display = 'block';
-      saveBtn.style.display = 'none';
-      addCustomerBtn.disabled = true;
-      renderCustomers();
-      saveConfirmModal.hide();
-      saveModal.show();
-    });
+    saveBtn.addEventListener('click', saveItems);
 
-    addCustomerBtn.addEventListener('click', () => {
-      customers.push({
+    addItemBtn.addEventListener('click', () => {
+      items.push({
         name: '',
-        representative: '',
-        bizNum: '',
-        industryType: '',
-        businessType: '',
-        phone: '',
-        address: '',
-        fax: ''
+        spec: '',
+        unit: '',
+        unitPrice: 0,
+        remark: ''
       });
-      renderCustomers();
+      renderItems();
     });
 
-    loadCustomers();
+    loadItems();
   </script>
 </body>
 </html>

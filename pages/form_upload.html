@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>정산관리</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    .settlement-list-table {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 0.75rem;
+      overflow: hidden;
+    }
+    .settlement-list-table table { 
+      margin-bottom: 0;
+      font-size: 0.9rem;
+    }
+    .settlement-list-table th { 
+      background: #f8f9fa;
+      font-weight: 600;
+      border-color: rgba(0,0,0,0.08);
+    }
+    .settlement-list-table td {
+      vertical-align: middle;
+      border-color: rgba(0,0,0,0.08);
+    }
+    .settlement-list-table tbody tr:hover { 
+      background: #f1f3f5;
+      cursor: pointer;
+    }
+    .status-badge { 
+      font-size: 11px; 
+      padding: 4px 8px; 
+      border-radius: 4px; 
+      font-weight: 600;
+      display: inline-block;
+    }
+    .status-unpaid { 
+      background: #ffebee; 
+      color: #c62828; 
+    }
+    .status-partial { 
+      background: #fff3e0; 
+      color: #e65100; 
+    }
+    .status-paid { 
+      background: #e8f5e9; 
+      color: #2e7d32; 
+    }
+    .amount-unpaid { 
+      color: #c62828; 
+      font-weight: 600; 
+    }
+    
+    .settlement-detail {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      display: none;
+    }
+    .settlement-detail.active {
+      display: block;
+    }
+    .settlement-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid #e0e0e0;
+      margin-bottom: 1.5rem;
+    }
+    .settlement-header h3 { 
+      margin: 0; 
+      font-weight: 600;
+    }
+    .back-btn { 
+      cursor: pointer; 
+      color: #0066cc;
+      font-weight: 500;
+    }
+    .back-btn:hover { 
+      text-decoration: underline;
+    }
+    
+    .settlement-content { 
+      display: grid; 
+      grid-template-columns: 1fr 1fr; 
+      gap: 1.5rem; 
+      margin-bottom: 1.5rem;
+    }
+    .settlement-section { 
+      background: #f8f9fa; 
+      border-radius: 0.5rem; 
+      padding: 1rem; 
+      border: 1px solid rgba(0,0,0,0.08);
+    }
+    .settlement-section h5 { 
+      font-weight: 600; 
+      margin-bottom: 1rem; 
+      color: #333;
+      font-size: 0.95rem;
+    }
+    
+    .settlement-summary {
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .summary-item { 
+      text-align: center; 
+    }
+    .summary-label { 
+      font-size: 12px; 
+      color: #666; 
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    .summary-value { 
+      font-size: 20px; 
+      font-weight: 700; 
+      color: #333;
+    }
+    .summary-unpaid { 
+      color: #c62828; 
+    }
+    
+    .mini-table { 
+      font-size: 0.85rem; 
+      width: 100%; 
+      border-collapse: collapse;
+    }
+    .mini-table th { 
+      background: white; 
+      font-weight: 600; 
+      border-bottom: 1px solid #ddd; 
+      padding: 0.75rem;
+      text-align: center;
+    }
+    .mini-table td { 
+      padding: 0.75rem;
+      border-bottom: 1px solid #eee;
+      text-align: center;
+    }
+    .mini-table td.left-align {
+      text-align: left;
+    }
+    .mini-table td.right-align {
+      text-align: right;
+    }
+    
+    .btn-group-demo { 
+      margin-top: 1rem; 
+      display: flex; 
+      gap: 0.5rem;
+    }
+    .btn-group-demo button { 
+      font-size: 0.85rem;
+      flex: 1;
+    }
+
+    @media (max-width: 992px) {
+      .settlement-content { 
+        grid-template-columns: 1fr;
+      }
+      .settlement-summary {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <a href="../index.html">태경산업 주문관리 시스템</a>
+    </div>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>거래관리</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="transaction_list.html">주문관리</a></li>
+      <li class="nav-item"><a class="nav-link active" href="transaction_settlement.html">정산관리</a></li>
+    </ul>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>기준정보</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="customer_list.html">거래처관리</a></li>
+      <li class="nav-item"><a class="nav-link" href="item_list.html">품목관리</a></li>
+      <li class="nav-item"><a class="nav-link" href="form_upload.html">서식업로드</a></li>
+    </ul>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>재고관리</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="inventory_list.html">재고관리</a></li>
+    </ul>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>기타</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="document_list.html">자료실</a></li>
+      <li class="nav-item"><a class="nav-link" href="https://www.g2b.go.kr" target="_blank" rel="noopener">나라장터</a></li>
+      <li class="nav-item"><a class="nav-link" href="https://mail.naver.com" target="_blank" rel="noopener">메일</a></li>
+      <li class="nav-item"><a class="nav-link" href="company_info.html">회사정보</a></li>
+    </ul>
+  </div>
+
+  <main class="main-content">
+    <!-- 거래처 목록 화면 -->
+    <div id="settlementListView" class="active">
+      <div class="detail-header">
+        <h2>정산관리</h2>
+      </div>
+
+      <!-- 검색 폼 -->
+      <div style="background: #f8f9fa; border: 1px solid rgba(0,0,0,0.08); border-radius: 0.75rem; padding: 1rem; margin-bottom: 1.5rem;">
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: flex-end;">
+          <div>
+            <label for="settlementSearchCustomer" class="form-label" style="font-weight: 600; margin-bottom: 0.5rem;">거래처명</label>
+            <input type="text" class="form-control" id="settlementSearchCustomer" placeholder="거래처명 검색... (초성 검색 가능)">
+            <div id="settlementSuggestions" style="position: absolute; background: white; border: 1px solid #ddd; border-radius: 4px; max-width: 300px; max-height: 200px; overflow-y: auto; display: none; margin-top: 4px; z-index: 100;"></div>
+          </div>
+          <button class="btn btn-secondary" id="settlementSearchReset">초기화</button>
+        </div>
+      </div>
+
+      <div class="settlement-list-table">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th style="width: 15%;">거래처명</th>
+              <th style="width: 12%;">최근 거래월</th>
+              <th style="width: 15%;">총 판매액</th>
+              <th style="width: 15%;">총 입금액</th>
+              <th style="width: 15%;">미수금</th>
+              <th style="width: 18%;">상태</th>
+            </tr>
+          </thead>
+          <tbody id="settlementListBody"></tbody>
+        </table>
+      </div>
+
+      <!-- 페이지네이션 -->
+      <nav aria-label="Page navigation" style="margin-top: 1.5rem;">
+        <ul class="pagination" id="settlementPagination"></ul>
+      </nav>
+    </div>
+
+    <!-- 거래처 상세 장부 화면 -->
+    <div id="settlementDetailView" class="settlement-detail">
+      <div class="settlement-header">
+        <div>
+          <h3 id="detailCustomerName"></h3>
+          <div id="detailCustomerInfo" style="font-size: 13px; color: #666; margin-top: 5px;"></div>
+        </div>
+        <div class="back-btn" id="backBtn">← 목록으로</div>
+      </div>
+
+      <div class="settlement-content">
+        <!-- 판매 기록 -->
+        <div>
+          <div class="settlement-section">
+            <h5>📋 판매 기록</h5>
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th>주문번호</th>
+                  <th>납품월</th>
+                  <th>금액</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody id="saleRecordsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 입금 기록 -->
+        <div>
+          <div class="settlement-section">
+            <h5>💰 입금 기록</h5>
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th>입금일자</th>
+                  <th>입금액</th>
+                  <th>대체주문</th>
+                </tr>
+              </thead>
+              <tbody id="paymentRecordsBody"></tbody>
+            </table>
+            <div class="btn-group-demo">
+              <button class="btn btn-sm btn-primary" id="addPaymentBtn">+ 입금 기록 추가</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 요약 정보 -->
+      <div class="settlement-summary">
+        <div class="summary-item">
+          <div class="summary-label">총 판매액</div>
+          <div class="summary-value" id="totalSaleAmount">0</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">총 입금액</div>
+          <div class="summary-value" id="totalPaidAmount">0</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">미수금</div>
+          <div class="summary-value summary-unpaid" id="unpaidAmount">0</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 입금 추가 모달 -->
+  <div class="modal fade" id="paymentModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">입금 기록 추가</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="paymentDate" class="form-label">입금일자</label>
+            <input type="date" class="form-control" id="paymentDate">
+          </div>
+          <div class="mb-3">
+            <label for="paymentAmount" class="form-label">입금액</label>
+            <input type="number" class="form-control" id="paymentAmount" placeholder="0">
+          </div>
+          <div class="mb-3">
+            <label for="paymentOrders" class="form-label">대체 주문 (쉼표로 구분)</label>
+            <input type="text" class="form-control" id="paymentOrders" placeholder="2026-0001, 2026-0002">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button type="button" class="btn btn-primary" id="savePaymentBtn">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let settlementData = {};
+    let currentCustomer = null;
+    const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+
+    function initSettlement() {
+      const savedPayments = JSON.parse(localStorage.getItem('payments') || '{}');
+      const savedTransactions = JSON.parse(localStorage.getItem('transactions') || '{}');
+      const customers = JSON.parse(localStorage.getItem('customers') || '[]');
+
+      customers.forEach(customer => {
+        const customerName = customer.name;
+        settlementData[customerName] = {
+          ...customer,
+          sales: [],
+          payments: savedPayments[customerName] || [],
+          totalSale: 0,
+          totalPaid: 0
+        };
+      });
+
+      Object.keys(savedTransactions).forEach(orderId => {
+        const order = savedTransactions[orderId];
+        if (settlementData[order.customer]) {
+          const amount = order.items.reduce((sum, item) => {
+            const supply = item.quantity * item.unitPrice;
+            const tax = order.taxType === 'exclude' ? 0 : Math.round(supply * 0.1);
+            return sum + supply + tax;
+          }, 0);
+          settlementData[order.customer].sales.push({
+            orderId,
+            month: order.deliveryMonth,
+            amount: amount,
+            status: order.paymentStatus || 'unpaid'
+          });
+        }
+      });
+
+      Object.keys(settlementData).forEach(customerName => {
+        const data = settlementData[customerName];
+        data.totalSale = data.sales.reduce((sum, s) => sum + s.amount, 0);
+        data.totalPaid = data.payments.reduce((sum, p) => sum + p.amount, 0);
+      });
+
+      renderSettlementList();
+    }
+
+    function renderSettlementList() {
+      const tbody = document.getElementById('settlementListBody');
+      const customers = Object.keys(settlementData).sort();
+      
+      tbody.innerHTML = customers.map(customerName => {
+        const data = settlementData[customerName];
+        const unpaid = data.totalSale - data.totalPaid;
+        let statusBadge = '';
+        let statusClass = '';
+
+        if (unpaid === 0) {
+          statusBadge = '완료';
+          statusClass = 'status-paid';
+        } else if (data.totalPaid === 0) {
+          statusBadge = '미입금';
+          statusClass = 'status-unpaid';
+        } else {
+          statusBadge = '부분입금';
+          statusClass = 'status-partial';
+        }
+
+        const lastMonth = data.sales.length > 0 
+          ? data.sales[data.sales.length - 1].month 
+          : '-';
+
+        return `
+          <tr onclick="showDetailView('${customerName}')">
+            <td><strong>${customerName}</strong></td>
+            <td>${lastMonth}</td>
+            <td>${data.totalSale.toLocaleString()}</td>
+            <td>${data.totalPaid.toLocaleString()}</td>
+            <td class="${unpaid > 0 ? 'amount-unpaid' : ''}">${unpaid.toLocaleString()}</td>
+            <td><span class="status-badge ${statusClass}">${statusBadge}</span></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function showDetailView(customerName) {
+      currentCustomer = customerName;
+      const data = settlementData[customerName];
+
+      document.getElementById('detailCustomerName').textContent = customerName;
+      document.getElementById('detailCustomerInfo').innerHTML = 
+        `대표: ${data.representative} | 전화: ${data.phone}`;
+
+      const saleBody = document.getElementById('saleRecordsBody');
+      saleBody.innerHTML = data.sales.map(sale => `
+        <tr>
+          <td>${sale.orderId}</td>
+          <td>${sale.month}</td>
+          <td class="right-align">${sale.amount.toLocaleString()}</td>
+          <td>
+            <span class="status-badge ${sale.status === 'paid' ? 'status-paid' : 'status-unpaid'}" style="font-size:10px;">
+              ${sale.status === 'paid' ? '입금완료' : '미입금'}
+            </span>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" class="text-center">거래 기록이 없습니다.</td></tr>';
+
+      const paymentBody = document.getElementById('paymentRecordsBody');
+      paymentBody.innerHTML = data.payments.map(payment => `
+        <tr>
+          <td>${payment.date}</td>
+          <td class="right-align">${payment.amount.toLocaleString()}</td>
+          <td>${payment.targetOrders.join(', ')}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="3" class="text-center">입금 기록이 없습니다.</td></tr>';
+
+      const unpaid = data.totalSale - data.totalPaid;
+      document.getElementById('totalSaleAmount').textContent = data.totalSale.toLocaleString();
+      document.getElementById('totalPaidAmount').textContent = data.totalPaid.toLocaleString();
+      document.getElementById('unpaidAmount').textContent = unpaid.toLocaleString();
+
+      document.getElementById('settlementListView').classList.remove('active');
+      document.getElementById('settlementDetailView').classList.add('active');
+    }
+
+    function showListView() {
+      document.getElementById('settlementDetailView').classList.remove('active');
+      document.getElementById('settlementListView').classList.add('active');
+    }
+
+    document.getElementById('backBtn').addEventListener('click', showListView);
+
+    document.getElementById('addPaymentBtn').addEventListener('click', () => {
+      document.getElementById('paymentDate').value = '';
+      document.getElementById('paymentAmount').value = '';
+      document.getElementById('paymentOrders').value = '';
+      paymentModal.show();
+    });
+
+    document.getElementById('savePaymentBtn').addEventListener('click', () => {
+      const date = document.getElementById('paymentDate').value;
+      const amount = parseInt(document.getElementById('paymentAmount').value) || 0;
+      const orders = document.getElementById('paymentOrders').value
+        .split(',')
+        .map(o => o.trim())
+        .filter(o => o);
+
+      if (!date || amount <= 0) {
+        alert('입금일자와 입금액을 입력해주세요.');
+        return;
+      }
+
+      if (!settlementData[currentCustomer].payments) {
+        settlementData[currentCustomer].payments = [];
+      }
+      settlementData[currentCustomer].payments.push({ date, amount, targetOrders: orders });
+
+      const payments = JSON.parse(localStorage.getItem('payments') || '{}');
+      payments[currentCustomer] = settlementData[currentCustomer].payments;
+      localStorage.setItem('payments', JSON.stringify(payments));
+
+      paymentModal.hide();
+      showDetailView(currentCustomer);
+      alert('입금 기록이 저장되었습니다.');
+    });
+
+    initSettlement();
+  </script>
+</body>
+</html>

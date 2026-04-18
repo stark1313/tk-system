@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>주문 상세내역</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    .form-section,
+    .items-section {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .form-group label {
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+    .form-group input,
+    .form-group select {
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 0.375rem;
+      font-size: 0.9rem;
+    }
+    .form-group input:disabled,
+    .form-group select:disabled {
+      background: #f8f9fa;
+    }
+    .customer-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 0.25rem;
+      max-height: 220px;
+      overflow-y: auto;
+      display: none;
+    }
+    .customer-suggestions.show {
+      display: block;
+    }
+    .customer-suggestions li {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+    }
+    .customer-suggestions li:hover {
+      background: #f8f9fa;
+    }
+    .items-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .items-header h4 {
+      margin: 0;
+      font-weight: 600;
+    }
+    .doc-buttons {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .items-table th,
+    .items-table td {
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      text-align: center;
+    }
+    .items-table th {
+      background: #f8f9fa;
+      font-weight: 600;
+    }
+    .items-table td.left-align {
+      text-align: left;
+    }
+    .items-table td.right-align {
+      text-align: right;
+    }
+    .items-table input {
+      width: 100%;
+      padding: 0.35rem;
+      border: 1px solid #ddd;
+      border-radius: 0.25rem;
+      font-size: 0.85rem;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    .items-table input[type=number] {
+      text-align: right;
+    }
+    .control-buttons {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
+    .control-buttons button {
+      min-width: 100px;
+    }
+    .add-row-btn {
+      background: #f8f9fa;
+      border: 1px solid #ddd;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+    .minus-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 0.25rem;
+      width: 30px;
+      height: 30px;
+      cursor: pointer;
+    }
+    .minus-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <a href="../index.html">태경산업 주문관리 시스템</a>
+    </div>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>거래관리</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link active" href="transaction_list.html">주문관리</a></li>
+      <li class="nav-item"><a class="nav-link" href="transaction_settlement.html">정산관리</a></li>
+    </ul>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>기준정보</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="customer_list.html">거래처관리</a></li>
+      <li class="nav-item"><a class="nav-link" href="item_list.html">품목관리</a></li>
+      <li class="nav-item"><a class="nav-link" href="form_upload.html">서식업로드</a></li>
+    </ul>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>재고관리</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="inventory_list.html">재고관리</a></li>
+    </ul>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>기타</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="document_list.html">자료실</a></li>
+      <li class="nav-item"><a class="nav-link" href="https://www.g2b.go.kr" target="_blank" rel="noopener">나라장터</a></li>
+      <li class="nav-item"><a class="nav-link" href="https://mail.naver.com" target="_blank" rel="noopener">메일</a></li>
+      <li class="nav-item"><a class="nav-link" href="company_info.html">회사정보</a></li>
+    </ul>
+  </div>
+  <main class="main-content">
+    <div class="detail-header">
+      <h2>주문 상세내역</h2>
+      <div id="action-buttons-container" class="control-buttons"></div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="transaction-id">거래번호</label>
+          <input type="text" id="transaction-id" class="form-control" disabled>
+        </div>
+        <div class="form-group">
+          <label>납품월</label>
+          <div class="d-flex gap-2">
+            <select id="delivery-year" class="form-control" style="flex: 1;">
+              <option value="">년</option>
+            </select>
+            <select id="delivery-month" class="form-control" style="flex: 1;">
+              <option value="">월</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="payment-status">입금여부</label>
+          <select id="payment-status" class="form-control" disabled>
+            <option value="">선택</option>
+            <option value="paid">입금완료</option>
+            <option value="unpaid">미입금</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="customer">거래처</label>
+          <input type="text" id="customer" class="form-control" autocomplete="off" placeholder="거래처를 입력하세요">
+          <ul id="customer-suggestions" class="customer-suggestions list-group"></ul>
+        </div>
+        <div class="form-group">
+          <label for="project-name">공사명</label>
+          <input type="text" id="project-name" class="form-control" placeholder="공사명을 입력하세요">
+        </div>
+        <div class="form-group">
+          <label for="tax-type">세액여부</label>
+          <select id="tax-type" class="form-control">
+            <option value="include">포함</option>
+            <option value="exclude">제외</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="items-section">
+      <div class="items-header">
+        <h4>품목 리스트</h4>
+        <div class="doc-buttons">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="estimate-btn">견적서</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="delivery-btn">납품서</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="invoice-btn">청구서</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="statement-btn">거래명세서</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="tax-invoice-btn">세금계산서</button>
+        </div>
+      </div>
+
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 40px;"><button type="button" id="add-item-header-btn" class="btn btn-sm btn-success">+</button></th>
+            <th>품목</th>
+            <th>규격</th>
+            <th>단위</th>
+            <th>수량</th>
+            <th>단가</th>
+            <th>공급가액</th>
+            <th>세액</th>
+            <th>합계</th>
+            <th>비고</th>
+          </tr>
+        </thead>
+        <tbody id="items-tbody"></tbody>
+        <tfoot>
+          <tr style="font-weight: 600; background-color: #f8f9fa;">
+            <td colspan="6" style="text-align: right; padding: 0.75rem;">합계</td>
+            <td style="padding: 0.75rem; border: 1px solid #ddd;"><span id="total-supply">0</span></td>
+            <td style="padding: 0.75rem; border: 1px solid #ddd;"><span id="total-tax">0</span></td>
+            <td style="padding: 0.75rem; border: 1px solid #ddd;"><span id="total-amount">0</span></td>
+            <td style="padding: 0.75rem; border: 1px solid #ddd;"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- 저장 확인 모달 -->
+    <div class="modal fade" id="saveConfirmModal" tabindex="-1" role="dialog" aria-labelledby="saveConfirmLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="saveConfirmLabel">확인</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            저장하시겠습니까?
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+            <button type="button" class="btn btn-primary" id="saveConfirmBtn">저장</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 저장 완료 모달 -->
+    <div class="modal fade" id="saveModal" tabindex="-1" role="dialog" aria-labelledby="saveModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="saveModalLabel">알림</h5>
+          </div>
+          <div class="modal-body">
+            저장되었습니다.
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" id="saveModalBtn" data-bs-dismiss="modal">확인</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 에러 메시지 모달 -->
+    <div class="modal fade" id="errorModal" tabindex="-1" role="dialog" aria-labelledby="errorModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="errorModalLabel">알림</h5>
+          </div>
+          <div class="modal-body" id="errorModalMessage">
+            에러 메시지
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" id="errorModalBtn" data-bs-dismiss="modal">확인</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script>
+    function getChosung(text) {
+      const chosung = [
+        'ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'
+      ];
+      return Array.from(text).map(char => {
+        const code = char.charCodeAt(0);
+        if (code < 0xac00 || code > 0xd7a3) return char;
+        const index = Math.floor((code - 0xac00) / 588);
+        return chosung[index] || char;
+      }).join('');
+    }
+
+    function initTransactionDetailPage() {
+      const urlParams = new URLSearchParams(window.location.search);
+      let transactionId = urlParams.get('id');  // const → let으로 변경
+      const isNewRecord = !transactionId;
+      
+      // Load customers from localStorage (from 거래처관리)
+      const savedCustomers = JSON.parse(localStorage.getItem('customers') || '[]');
+      const customers = savedCustomers.map(c => c.name);
+      
+      const transactionData = JSON.parse(localStorage.getItem('transactions') || '{}');
+
+      let editMode = isNewRecord;
+      const transactionIdInput = document.getElementById('transaction-id');
+      const customerInput = document.getElementById('customer');
+      const deliveryYearInput = document.getElementById('delivery-year');
+      const deliveryMonthInput = document.getElementById('delivery-month');
+      const taxTypeInput = document.getElementById('tax-type');
+      const projectNameInput = document.getElementById('project-name');
+      const itemsBody = document.getElementById('items-tbody');
+      const addItemBtn = document.getElementById('add-item-header-btn');
+      const actionButtonsContainer = document.getElementById('action-buttons-container');
+      const suggestions = document.getElementById('customer-suggestions');
+      const saveConfirmModal = new bootstrap.Modal(document.getElementById('saveConfirmModal'));
+      const saveConfirmBtn = document.getElementById('saveConfirmBtn');
+      const saveModal = new bootstrap.Modal(document.getElementById('saveModal'));
+      const saveModalBtn = document.getElementById('saveModalBtn');
+      const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+      const errorModalMessage = document.getElementById('errorModalMessage');
+      const errorModalBtn = document.getElementById('errorModalBtn');
+
+      function showErrorModal(message) {
+        errorModalMessage.textContent = message;
+        errorModal.show();
+      }
+
+      // Populate delivery year and month selects
+      const currentYear = new Date().getFullYear();
+      for (let year = currentYear - 1; year <= currentYear + 1; year++) {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        deliveryYearInput.appendChild(option);
+      }
+      for (let month = 1; month <= 12; month++) {
+        const option = document.createElement('option');
+        option.value = month.toString().padStart(2, '0');
+        option.textContent = month;
+        deliveryMonthInput.appendChild(option);
+      }
+
+      function getDeliveryMonth() {
+        const year = deliveryYearInput.value;
+        const month = deliveryMonthInput.value;
+        return year && month ? `${year}-${month}` : '';
+      }
+
+      function setDeliveryMonth(value) {
+        if (value) {
+          const [year, month] = value.split('-');
+          deliveryYearInput.value = year;
+          deliveryMonthInput.value = month;
+        } else {
+          deliveryYearInput.value = '';
+          deliveryMonthInput.value = '';
+        }
+      }
+
+      function calculateTotals() {
+        let totalSupply = 0;
+        let totalTax = 0;
+        let totalAmount = 0;
+
+        document.querySelectorAll('#items-tbody tr').forEach(row => {
+          const supply = parseFloat(row.querySelector('.item-supply-price')?.value?.replace(/,/g, '')) || 0;
+          const tax = parseFloat(row.querySelector('.item-tax')?.value?.replace(/,/g, '')) || 0;
+          const total = parseFloat(row.querySelector('.item-total')?.value?.replace(/,/g, '')) || 0;
+          totalSupply += supply;
+          totalTax += tax;
+          totalAmount += total;
+        });
+
+        document.getElementById('total-supply').textContent = totalSupply ? formatNumber(totalSupply) : '0';
+        document.getElementById('total-tax').textContent = totalTax ? formatNumber(totalTax) : '0';
+        document.getElementById('total-amount').textContent = totalAmount ? formatNumber(totalAmount) : '0';
+      }
+
+      function formatNumber(num) {
+        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      }
+
+      function calculateRow(row) {
+        const quantityInput = row.querySelector('.item-quantity');
+        const unitPriceInput = row.querySelector('.item-unit-price');
+        const supplyPriceInput = row.querySelector('.item-supply-price');
+        const taxInput = row.querySelector('.item-tax');
+        const totalInput = row.querySelector('.item-total');
+
+        const quantity = parseFloat(quantityInput.value) || 0;
+        const unitPrice = parseFloat(unitPriceInput.value) || 0;
+        const supply = quantity * unitPrice;
+        const tax = taxTypeInput.value === 'exclude' ? 0 : Math.round(supply * 0.1);
+        const total = Math.round(supply + tax);
+
+        supplyPriceInput.value = supply ? formatNumber(supply) : '';
+        taxInput.value = tax ? formatNumber(tax) : '';
+        totalInput.value = total ? formatNumber(total) : '';
+        
+        calculateTotals();
+      }
+
+      function calculateAll() {
+        document.querySelectorAll('#items-tbody tr').forEach(calculateRow);
+        calculateTotals();
+      }
+
+      function createItemRow(data = {}) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><button type="button" class="minus-btn" data-action="remove">-</button></td>
+          <td style="position: relative;">
+            <input type="text" class="form-control item-product" value="${data.product || ''}" ${editMode ? '' : 'disabled'} placeholder="품목">
+            <ul class="product-suggestions" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 10; background: #fff; border: 1px solid #ddd; border-radius: 0.25rem; max-height: 220px; overflow-y: auto; display: none; list-style: none; padding: 0; margin: 0;"></ul>
+          </td>
+          <td><input type="text" class="form-control item-spec" value="${data.spec || ''}" ${editMode ? '' : 'disabled'}></td>
+          <td><input type="text" class="form-control item-unit" value="${data.unit || ''}" ${editMode ? '' : 'disabled'}></td>
+          <td><input type="number" class="form-control item-quantity" value="${data.quantity || 0}" min="0" ${editMode ? '' : 'disabled'}></td>
+          <td><input type="number" class="form-control item-unit-price" value="${data.unitPrice || 0}" min="0" ${editMode ? '' : 'disabled'}></td>
+          <td><input type="text" class="form-control item-supply-price" value="" disabled></td>
+          <td><input type="text" class="form-control item-tax" value="" disabled></td>
+          <td><input type="text" class="form-control item-total" value="" disabled></td>
+          <td><input type="text" class="form-control item-remark" value="${data.remark || ''}" ${editMode ? '' : 'disabled'}></td>
+        `;
+
+        row.querySelector('[data-action="remove"]').addEventListener('click', () => {
+          if (!isNewRecord && !editMode && transactionId) return;
+          row.remove();
+          calculateAll();
+        });
+
+        // 품목 드랍다운 기능
+        const productInput = row.querySelector('.item-product');
+        const productSuggestions = row.querySelector('.product-suggestions');
+        const items = JSON.parse(localStorage.getItem('items') || '[]');
+
+        productInput.addEventListener('input', () => {
+          const inputValue = productInput.value.trim().toLowerCase();
+          if (!inputValue) {
+            productSuggestions.style.display = 'none';
+          } else {
+            const filtered = items.filter(item => item.name.toLowerCase().includes(inputValue));
+            if (filtered.length > 0) {
+              productSuggestions.innerHTML = filtered.map(item => `
+                <li style="padding: 0.5rem 0.75rem; cursor: pointer;" data-name="${item.name}" data-spec="${item.spec}" data-unit="${item.unit}" data-price="${item.unitPrice}" data-remark="${item.remark || ''}">
+                  <strong>${item.name}</strong> - ${item.spec} (${item.unit})
+                </li>
+              `).join('');
+              productSuggestions.style.display = 'block';
+              productSuggestions.querySelectorAll('li').forEach(li => {
+                li.addEventListener('click', () => {
+                  productInput.value = li.dataset.name;
+                  row.querySelector('.item-spec').value = li.dataset.spec;
+                  row.querySelector('.item-unit').value = li.dataset.unit;
+                  row.querySelector('.item-unit-price').value = li.dataset.price;
+                  row.querySelector('.item-remark').value = li.dataset.remark;
+                  productSuggestions.style.display = 'none';
+                  calculateRow(row);
+                });
+              });
+            } else {
+              productSuggestions.style.display = 'none';
+            }
+          }
+        });
+
+        // 외부 클릭 시 드랍다운 닫기
+        document.addEventListener('click', (e) => {
+          if (!e.target.closest('.item-product') && !e.target.closest('.product-suggestions')) {
+            productSuggestions.style.display = 'none';
+          }
+        });
+
+        row.querySelectorAll('.item-quantity, .item-unit-price').forEach(input => {
+          input.addEventListener('input', () => calculateRow(row));
+        });
+
+        calculateRow(row);
+        return row;
+      }
+
+      function setFieldsDisabled(disabled) {
+        [customerInput, deliveryYearInput, deliveryMonthInput, taxTypeInput, projectNameInput].forEach(el => el.readOnly = disabled);
+        document.querySelectorAll('#items-tbody input').forEach(el => {
+          if (!el.classList.contains('item-supply-price') && !el.classList.contains('item-tax') && !el.classList.contains('item-total')) {
+            el.readOnly = disabled;
+          }
+        });
+        addItemBtn.disabled = disabled;
+        document.querySelectorAll('.minus-btn').forEach(btn => btn.disabled = disabled);
+      }
+
+      function generateNewTransactionId() {
+        const transactions = JSON.parse(localStorage.getItem('transactions') || '{}');
+        const currentYear = new Date().getFullYear();
+        
+        // Find the maximum number for the current year
+        let maxNum = 0;
+        Object.keys(transactions).forEach(id => {
+          const match = id.match(new RegExp(`^${currentYear}-(\\d{4})$`));
+          if (match) {
+            const num = parseInt(match[1]);
+            if (num > maxNum) maxNum = num;
+          }
+        });
+        
+        return `${currentYear}-${String(maxNum + 1).padStart(4, '0')}`;
+      }
+
+      function updateActionButtons() {
+        actionButtonsContainer.innerHTML = '';
+
+        const listBtn = document.createElement('button');
+        listBtn.type = 'button';
+        listBtn.className = 'btn btn-outline-secondary';
+        listBtn.textContent = '목록';
+        listBtn.addEventListener('click', () => {
+          window.location.href = 'transaction_list.html';
+        });
+
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.className = 'btn btn-primary';
+        saveBtn.textContent = '저장';
+        saveBtn.addEventListener('click', () => {
+          // 저장 확인 모달 표시
+          saveConfirmModal.show();
+        });
+        
+        // 실제 저장 로직은 updateActionButtons() 밖에서 등록
+        // (중복 등록 방지)
+
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'btn btn-warning';
+        editBtn.textContent = '수정';
+        editBtn.addEventListener('click', () => {
+          editMode = true;
+          setFieldsDisabled(false);
+          updateActionButtons();
+        });
+
+        if (editMode) {
+          actionButtonsContainer.appendChild(saveBtn);
+          actionButtonsContainer.appendChild(listBtn);
+        } else {
+          actionButtonsContainer.appendChild(editBtn);
+          actionButtonsContainer.appendChild(listBtn);
+        }
+      }
+
+      function loadTransaction(id) {
+        const data = transactionData[id];
+        if (!data) return;
+        customerInput.value = data.customer;
+        setDeliveryMonth(data.deliveryMonth);
+        taxTypeInput.value = data.taxType;
+        projectNameInput.value = data.projectName;
+        itemsBody.innerHTML = '';
+        data.items.forEach(item => itemsBody.appendChild(createItemRow(item)));
+        calculateTotals();
+      }
+
+      function showCustomerSuggestions(value) {
+        if (!value) {
+          suggestions.innerHTML = '';
+          suggestions.classList.remove('show');
+          return;
+        }
+        const keyword = value.trim();
+        const matched = customers.filter(name => name.includes(keyword) || getChosung(name).includes(keyword));
+        suggestions.innerHTML = matched.slice(0, 6).map(name => `<li class="list-group-item suggestion-item" data-value="${name}">${name}</li>`).join('');
+        suggestions.classList.toggle('show', matched.length > 0);
+      }
+
+      customerInput.addEventListener('input', e => {
+        if (!editMode) return;
+        showCustomerSuggestions(e.target.value);
+      });
+      suggestions.addEventListener('click', e => {
+        const item = e.target.closest('.suggestion-item');
+        if (!item) return;
+        customerInput.value = item.dataset.value;
+        suggestions.innerHTML = '';
+        suggestions.classList.remove('show');
+      });
+      document.addEventListener('click', e => {
+        if (!e.target.closest('.form-group')) {
+          suggestions.innerHTML = '';
+          suggestions.classList.remove('show');
+        }
+      });
+
+      addItemBtn.addEventListener('click', () => {
+        if (!editMode) return;
+        itemsBody.appendChild(createItemRow({ product: '', spec: '', unit: '', quantity: 0, unitPrice: 0, remark: '' }));
+      });
+
+      ['estimate', 'delivery', 'invoice', 'statement', 'taxInvoice'].forEach(type => {
+        const button = document.getElementById(`${type}-btn`);
+        if (button) {
+          button.addEventListener('click', async () => {
+            if (type === 'estimate') {
+              // 견적서는 실제 생성
+              await generateEstimate();
+            } else {
+              // 다른 서식은 아직 미구현
+              alert('서식 업로드 후 다운로드 기능을 사용할 수 있습니다.');
+            }
+          });
+        }
+      });
+
+      async function generateEstimate() {
+        // 현재 입력된 데이터 수집
+        const data = {
+          deliveryMonth: getDeliveryMonth(),
+          customer: customerInput.value,
+          projectName: projectNameInput.value,
+          items: Array.from(document.querySelectorAll('#items-tbody tr')).map(row => ({
+            product: row.querySelector('.item-product')?.value || '',
+            spec: row.querySelector('.item-spec')?.value || '',
+            unit: row.querySelector('.item-unit')?.value || '',
+            quantity: parseFloat(row.querySelector('.item-quantity')?.value) || 0,
+            unitPrice: parseFloat(row.querySelector('.item-unit-price')?.value) || 0,
+            remark: row.querySelector('.item-remark')?.value || ''
+          }))
+        };
+
+        try {
+          const response = await fetch('http://localhost:5000/estimate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+          });
+
+          if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = response.headers.get('content-disposition')?.split('filename="')[1]?.replace('"', '') || 'estimate.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            alert('견적서가 생성되었습니다.');
+          } else {
+            alert('견적서 생성에 실패했습니다.');
+          }
+        } catch (error) {
+          alert('서버에 연결할 수 없습니다.\n견적서 서버를 먼저 시작해주세요.\n\n터미널에서 다음 명령으로 시작:\npython3 estimate_server.py');
+        }
+      }
+
+      taxTypeInput.addEventListener('change', () => {
+        calculateAll();
+      });
+
+      saveModalBtn.addEventListener('click', () => {
+        saveModal.hide();
+        // 저장 완료 후 주문관리 리스트로 이동
+        setTimeout(() => {
+          window.location.href = 'transaction_list.html';
+        }, 300);
+      });
+
+      if (transactionId && transactionId !== 'new') {
+        editMode = false;
+        transactionIdInput.value = transactionId;
+        loadTransaction(transactionId);
+      } else {
+        editMode = true;
+        transactionId = generateNewTransactionId();  // 변수 업데이트
+        transactionIdInput.value = transactionId;
+        itemsBody.innerHTML = '';
+        itemsBody.appendChild(createItemRow({ product: '', spec: '', unit: '', quantity: 0, unitPrice: 0, remark: '' }));
+      }
+
+      setFieldsDisabled(!editMode);
+      updateActionButtons();
+
+      // saveConfirmBtn 이벤트 (함수 내부에서 등록 - 변수 정의됨)
+      saveConfirmBtn.addEventListener('click', () => {
+        // Validate required fields
+        if (!customerInput.value.trim()) {
+          saveConfirmModal.hide();
+          showErrorModal('거래처/납품월은 필수입니다.');
+          customerInput.focus();
+          return;
+        }
+
+        // Collect data
+        const data = {
+          customer: customerInput.value,
+          deliveryMonth: getDeliveryMonth(),
+          taxType: taxTypeInput.value,
+          projectName: projectNameInput.value,
+          items: Array.from(document.querySelectorAll('#items-tbody tr')).map(row => ({
+            product: row.querySelector('.item-product')?.value || '',
+            spec: row.querySelector('.item-spec')?.value || '',
+            unit: row.querySelector('.item-unit')?.value || '',
+            quantity: parseFloat(row.querySelector('.item-quantity')?.value) || 0,
+            unitPrice: parseFloat(row.querySelector('.item-unit-price')?.value) || 0,
+            remark: row.querySelector('.item-remark')?.value || ''
+          }))
+        };
+
+        // Save to localStorage
+        const transactions = JSON.parse(localStorage.getItem('transactions') || '{}');
+        const newTransactionId = transactionId || generateNewTransactionId();
+        transactions[newTransactionId] = data;
+        localStorage.setItem('transactions', JSON.stringify(transactions));
+
+        // Update UI
+        transactionIdInput.value = newTransactionId;
+        editMode = false;
+        setFieldsDisabled(true);
+        
+        // 모달 닫고 완료 메시지 표시
+        saveConfirmModal.hide();
+        saveModal.show();
+        
+        // 2초 후 주문관리 리스트로 이동
+        setTimeout(() => {
+          window.location.href = 'transaction_list.html';
+        }, 2000);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', initTransactionDetailPage);
+  </script>
+</body>
+</html>

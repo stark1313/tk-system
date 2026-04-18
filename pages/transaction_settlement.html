@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>서식업로드</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    .content-card {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      margin: 2rem auto;
+      max-width: 980px;
+    }
+    .upload-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+    .upload-item {
+      padding: 1rem;
+      border: 1px solid #dee2e6;
+      border-radius: 0.75rem;
+      background: #f8f9fa;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .upload-item label {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .upload-item input[type=file] {
+      border: 1px solid #ced4da;
+      border-radius: 0.375rem;
+      padding: 0.4rem;
+    }
+    .template-status {
+      font-size: 0.9rem;
+      color: #495057;
+      min-height: 1.5rem;
+    }
+    .form-note {
+      margin-top: 1rem;
+      line-height: 1.6;
+      color: #495057;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <a href="../index.html">태경산업 주문관리 시스템</a>
+    </div>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>거래관리</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="transaction_list.html">주문관리</a></li>
+      <li class="nav-item"><a class="nav-link" href="transaction_settlement.html">주문정산</a></li>
+    </ul>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>기준정보</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="customer_list.html">거래처리스트</a></li>
+      <li class="nav-item"><a class="nav-link" href="item_list.html">품목관리</a></li>
+      <li class="nav-item"><a class="nav-link active" href="form_upload.html">서식업로드</a></li>
+    </ul>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>재고관리</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="inventory_list.html">재고관리</a></li>
+    </ul>
+    <div class="sidebar-category" data-toggle><span class="cat-toggle">⌵</span>기타</div>
+    <ul class="sidebar-nav sidebar-sub">
+      <li class="nav-item"><a class="nav-link" href="document_list.html">자료실</a></li>
+      <li class="nav-item"><a class="nav-link" href="https://www.g2b.go.kr" target="_blank" rel="noopener">나라장터</a></li>
+      <li class="nav-item"><a class="nav-link" href="https://mail.naver.com" target="_blank" rel="noopener">메일</a></li>
+      <li class="nav-item"><a class="nav-link" href="company_info.html">회사정보</a></li>
+    </ul>
+  </div>
+  <main class="main-content">
+    <div class="detail-header">
+      <h2>서식업로드</h2>
+    </div>
+    <div class="content-card">
+      <div class="upload-grid">
+        <div class="upload-item">
+          <label for="template-estimate">견적서</label>
+          <input type="file" id="template-estimate" data-type="estimate" accept=".xlsx" />
+          <div class="template-status" id="status-estimate"></div>
+        </div>
+        <div class="upload-item">
+          <label for="template-delivery">납품서</label>
+          <input type="file" id="template-delivery" data-type="delivery" accept=".xlsx" />
+          <div class="template-status" id="status-delivery"></div>
+        </div>
+        <div class="upload-item">
+          <label for="template-invoice">청구서</label>
+          <input type="file" id="template-invoice" data-type="invoice" accept=".xlsx" />
+          <div class="template-status" id="status-invoice"></div>
+        </div>
+        <div class="upload-item">
+          <label for="template-statement">거래명세서</label>
+          <input type="file" id="template-statement" data-type="statement" accept=".xlsx" />
+          <div class="template-status" id="status-statement"></div>
+        </div>
+        <div class="upload-item">
+          <label for="template-tax-invoice">세금계산서</label>
+          <input type="file" id="template-tax-invoice" data-type="taxInvoice" accept=".xlsx" />
+          <div class="template-status" id="status-taxInvoice"></div>
+        </div>
+      </div>
+      <p class="form-note">
+        XLSX 견적서 템플릿 예시:
+        <ul>
+          <li>A2: <code>{deliveryMonth}</code></li>
+          <li>A3: <code>{customer}</code> + 귀하</li>
+          <li>A4: 공사명 : <code>{projectName}</code></li>
+        </ul>
+        품목 템플릿 행에는 아래 값을 사용하세요:<br>
+        <code>{product}</code>, <code>{spec}</code>, <code>{unit}</code>, <code>{quantity}</code>, <code>{unitPrice}</code>, <code>{supplyPrice}</code>, <code>{tax}</code>, <code>{total}</code>
+        <br>
+        품목 행 바로 아래에 <strong>이하여백</strong> 텍스트가 있을 경우, 주문 항목이 여러 줄이 되어도 해당 줄 아래에 그대로 유지됩니다.
+      </p>
+    </div>
+  </main>
+  <script>
+    const templateFields = [
+      { key: 'estimate', label: '견적서' },
+      { key: 'delivery', label: '납품서' },
+      { key: 'invoice', label: '청구서' },
+      { key: 'statement', label: '거래명세서' },
+      { key: 'taxInvoice', label: '세금계산서' }
+    ];
+
+    function loadFormTemplates() {
+      return JSON.parse(localStorage.getItem('formTemplates') || '{}');
+    }
+
+    function saveFormTemplates(templates) {
+      localStorage.setItem('formTemplates', JSON.stringify(templates));
+    }
+
+    function arrayBufferToBase64(buffer) {
+      let binary = '';
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+      }
+      return btoa(binary);
+    }
+
+    function renderFormStatus() {
+      const templates = loadFormTemplates();
+      templateFields.forEach(field => {
+        const statusElement = document.getElementById(`status-${field.key}`);
+        const info = templates[field.key];
+        if (info) {
+          statusElement.innerHTML = `업로드됨: <strong>${info.name}</strong> <button type="button" data-action="remove" data-type="${field.key}" class="btn btn-sm btn-link">삭제</button>`;
+        } else {
+          statusElement.textContent = '미업로드';
+        }
+      });
+    }
+
+    function handleTemplateUpload(type, file) {
+      if (!file) return;
+      if (!/\.xlsx$/i.test(file.name)) {
+        alert('현재 XLSX 형식(.xlsx) 템플릿만 지원합니다.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = arrayBufferToBase64(reader.result);
+        const templates = loadFormTemplates();
+        templates[type] = { name: file.name, base64 };
+        saveFormTemplates(templates);
+        renderFormStatus();
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function handleStatusAction(event) {
+      const button = event.target.closest('button[data-action="remove"]');
+      if (!button) return;
+      const type = button.dataset.type;
+      const templates = loadFormTemplates();
+      delete templates[type];
+      saveFormTemplates(templates);
+      renderFormStatus();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      templateFields.forEach(field => {
+        const input = document.querySelector(`input[data-type="${field.key}"]`);
+        input.addEventListener('change', event => {
+          handleTemplateUpload(field.key, event.target.files[0]);
+          event.target.value = '';
+        });
+      });
+      document.querySelector('.content-card').addEventListener('click', handleStatusAction);
+      renderFormStatus();
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
