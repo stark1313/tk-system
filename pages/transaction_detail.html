@@ -547,10 +547,23 @@
       }
 
       function setFieldsDisabled(disabled) {
-        [customerInput, deliveryYearInput, deliveryMonthInput, taxTypeInput, projectNameInput].forEach(el => el.readOnly = disabled);
+        if (disabled) {
+          customerInput.disabled = true;
+          deliveryYearInput.disabled = true;
+          deliveryMonthInput.disabled = true;
+          taxTypeInput.disabled = true;
+          projectNameInput.disabled = true;
+        } else {
+          customerInput.disabled = false;
+          deliveryYearInput.disabled = false;
+          deliveryMonthInput.disabled = false;
+          taxTypeInput.disabled = false;
+          projectNameInput.disabled = false;
+        }
+        
         document.querySelectorAll('#items-tbody input').forEach(el => {
           if (!el.classList.contains('item-supply-price') && !el.classList.contains('item-tax') && !el.classList.contains('item-total')) {
-            el.readOnly = disabled;
+            el.disabled = disabled;
           }
         });
         addItemBtn.disabled = disabled;
