@@ -494,7 +494,10 @@
           if (!inputValue) {
             productSuggestions.style.display = 'none';
           } else {
-            const filtered = items.filter(item => item.name.toLowerCase().includes(inputValue));
+            const filtered = items.filter(item => 
+              item.name.toLowerCase().includes(inputValue) || 
+              getChosung(item.name).toLowerCase().includes(inputValue)
+            );
             if (filtered.length > 0) {
               productSuggestions.innerHTML = filtered.map(item => `
                 <li style="padding: 0.5rem 0.75rem; cursor: pointer;" data-name="${item.name}" data-spec="${item.spec}" data-unit="${item.unit}" data-price="${item.unitPrice}" data-remark="${item.remark || ''}">
