@@ -465,7 +465,7 @@
         row.innerHTML = `
           <td><button type="button" class="minus-btn" data-action="remove">-</button></td>
           <td style="position: relative;">
-            <input type="text" class="form-control item-product" value="${data.product || ''}" ${editMode ? '' : 'disabled'} placeholder="품목">
+            <input type="text" class="form-control item-product" value="${data.product || ''}" ${editMode ? '' : 'disabled'} placeholder="품목" autocomplete="off">
             <ul class="product-suggestions" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 10; background: #fff; border: 1px solid #ddd; border-radius: 0.25rem; max-height: 220px; overflow-y: auto; display: none; list-style: none; padding: 0; margin: 0;"></ul>
           </td>
           <td><input type="text" class="form-control item-spec" value="${data.spec || ''}" ${editMode ? '' : 'disabled'}></td>
@@ -484,48 +484,57 @@
           calculateAll();
         });
 
-        // 품목 드랍다운 기능
+        // 품목 드롭다운 기능 - 주문관리와 동일한 로직
         const productInput = row.querySelector('.item-product');
         const productSuggestions = row.querySelector('.product-suggestions');
         const items = JSON.parse(localStorage.getItem('items') || '[]');
 
-        productInput.addEventListener('input', () => {
-          const inputValue = productInput.value.trim().toLowerCase();
-          if (!inputValue) {
+        function showProductSuggestions(value) {
+          if (!value) {
+            productSuggestions.innerHTML = '';
             productSuggestions.style.display = 'none';
-          } else {
-            const filtered = items.filter(item => 
-              item.name.toLowerCase().includes(inputValue) || 
-              getChosung(item.name).toLowerCase().includes(inputValue)
-            );
-            if (filtered.length > 0) {
-              productSuggestions.innerHTML = filtered.map(item => `
-                <li style="padding: 0.5rem 0.75rem; cursor: pointer;" data-name="${item.name}" data-spec="${item.spec}" data-unit="${item.unit}" data-price="${item.unitPrice}" data-remark="${item.remark || ''}">
-                  <strong>${item.name}</strong> - ${item.spec} (${item.unit})
-                </li>
-              `).join('');
-              productSuggestions.style.display = 'block';
-              productSuggestions.querySelectorAll('li').forEach(li => {
-                li.addEventListener('click', () => {
-                  productInput.value = li.dataset.name;
-                  row.querySelector('.item-spec').value = li.dataset.spec;
-                  row.querySelector('.item-unit').value = li.dataset.unit;
-                  row.querySelector('.item-unit-price').value = li.dataset.price;
-                  row.querySelector('.item-remark').value = li.dataset.remark;
-                  productSuggestions.style.display = 'none';
-                  calculateRow(row);
-                });
-              });
-            } else {
-              productSuggestions.style.display = 'none';
-            }
+            return;
           }
+
+          const keyword = value.trim();
+          const matched = items.filter(item =>
+            item.name.includes(keyword) || getChosung(item.name).includes(keyword)
+          );
+
+          productSuggestions.innerHTML = matched.slice(0, 6).map(item => `
+            <li class="list-group-item list-group-item-action suggestion-item" role="option" data-name="${item.name}" data-spec="${item.spec}" data-unit="${item.unit}" data-price="${item.unitPrice}" data-remark="${item.remark || ''}" style="cursor: pointer; padding: 0.5rem 0.75rem;">
+              <strong>${item.name}</strong> <small style="color: #666;">- ${item.spec} (${item.unit})</small>
+            </li>
+          `).join('');
+          productSuggestions.style.display = matched.length > 0 ? 'block' : 'none';
+        }
+
+        function clearProductSuggestions() {
+          productSuggestions.innerHTML = '';
+          productSuggestions.style.display = 'none';
+        }
+
+        productInput.addEventListener('input', () => {
+          if (!editMode) return;
+          showProductSuggestions(productInput.value);
         });
 
-        // 외부 클릭 시 드랍다운 닫기
+        productSuggestions.addEventListener('click', e => {
+          const item = e.target.closest('.suggestion-item');
+          if (!item) return;
+          productInput.value = item.dataset.name;
+          row.querySelector('.item-spec').value = item.dataset.spec;
+          row.querySelector('.item-unit').value = item.dataset.unit;
+          row.querySelector('.item-unit-price').value = item.dataset.price;
+          row.querySelector('.item-remark').value = item.dataset.remark;
+          clearProductSuggestions();
+          calculateRow(row);
+        });
+
+        // 외부 클릭 시 드롭다운 닫기
         document.addEventListener('click', (e) => {
           if (!e.target.closest('.item-product') && !e.target.closest('.product-suggestions')) {
-            productSuggestions.style.display = 'none';
+            clearProductSuggestions();
           }
         });
 
