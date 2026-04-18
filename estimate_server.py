@@ -15,6 +15,7 @@ from copy import copy
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO
+from urllib.parse import urlparse
 
 from openpyxl import load_workbook
 
@@ -548,6 +549,33 @@ def open_file(filepath):
 
 
 class EstimateHandler(BaseHTTPRequestHandler):
+    def _serve_static_file(self, relative_path):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        safe_relative = os.path.normpath(relative_path).lstrip("/\\")
+        file_path = os.path.abspath(os.path.join(base_dir, safe_relative))
+
+        if not file_path.startswith(base_dir + os.sep):
+            self.send_response(403)
+            self.end_headers()
+            return True
+
+        if not os.path.isfile(file_path):
+            return False
+
+        content_type, _ = mimetypes.guess_type(file_path)
+        if not content_type:
+            content_type = "application/octet-stream"
+
+        with open(file_path, "rb") as file_obj:
+            payload = file_obj.read()
+
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+        return True
+
     def _send_json(self, status_code, body):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -566,12 +594,14 @@ class EstimateHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            if self.path == "/api/templates":
+            request_path = urlparse(self.path).path
+
+            if request_path == "/api/templates":
                 self._send_json(200, {"templates": list_templates()})
                 return
 
-            if self.path.startswith("/api/templates/") and self.path.endswith("/download"):
-                parts = self.path.split("/")
+            if request_path.startswith("/api/templates/") and request_path.endswith("/download"):
+                parts = request_path.split("/")
                 if len(parts) >= 5:
                     template_type = parts[3]
                     if template_type not in ALLOWED_TEMPLATE_TYPES:
@@ -591,11 +621,11 @@ class EstimateHandler(BaseHTTPRequestHandler):
                     self.wfile.write(file_bytes)
                     return
 
-            if self.path == "/api/data":
+            if request_path == "/api/data":
                 self._send_json(200, load_latest_app_data())
                 return
 
-            if self.path == "/api/health":
+            if request_path == "/api/health":
                 self._send_json(
                     200,
                     {
@@ -605,6 +635,14 @@ class EstimateHandler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+
+            if request_path in ["/", "/index.html"]:
+                if self._serve_static_file("index.html"):
+                    return
+
+            if request_path.startswith("/css/") or request_path.startswith("/js/") or request_path.startswith("/pages/"):
+                if self._serve_static_file(request_path.lstrip("/")):
+                    return
 
             self.send_response(404)
             self.end_headers()
