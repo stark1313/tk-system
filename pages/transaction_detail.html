@@ -358,6 +358,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="../js/db_sync.js"></script>
   <script>
     function getChosung(text) {
       const chosung = [
@@ -702,24 +703,16 @@
         itemsBody.appendChild(createItemRow({ product: '', spec: '', unit: '', quantity: 0, unitPrice: 0, remark: '' }));
       });
 
-      ['estimate', 'delivery', 'invoice', 'statement', 'taxInvoice'].forEach(type => {
-        const button = document.getElementById(`${type}-btn`);
-        if (button) {
-          button.addEventListener('click', async () => {
-            if (type === 'estimate') {
-              // 견적서는 실제 생성
-              await generateEstimate();
-            } else {
-              // 다른 서식은 아직 미구현
-              alert('서식 업로드 후 다운로드 기능을 사용할 수 있습니다.');
-            }
-          });
-        }
-      });
+      const documentButtons = [
+        { docType: 'estimate', buttonId: 'estimate-btn', label: '견적서' },
+        { docType: 'delivery', buttonId: 'delivery-btn', label: '납품서' },
+        { docType: 'invoice', buttonId: 'invoice-btn', label: '청구서' },
+        { docType: 'statement', buttonId: 'statement-btn', label: '거래명세서' },
+        { docType: 'taxInvoice', buttonId: 'tax-invoice-btn', label: '세금계산서' }
+      ];
 
-      async function generateEstimate() {
-        // 현재 입력된 데이터 수집
-        const data = {
+      function collectDocumentData() {
+        return {
           deliveryMonth: getDeliveryMonth(),
           customer: customerInput.value,
           projectName: projectNameInput.value,
@@ -732,14 +725,18 @@
             remark: row.querySelector('.item-remark')?.value || ''
           }))
         };
+      }
+
+      async function generateDocument(docType, label) {
+        const data = collectDocumentData();
 
         try {
-          const response = await fetch('http://localhost:5000/estimate', {
+          const response = await fetch('http://localhost:5050/document', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify(data)
+            body: JSON.stringify({ docType, data })
           });
 
           if (response.ok) {
@@ -747,19 +744,28 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = response.headers.get('content-disposition')?.split('filename="')[1]?.replace('"', '') || 'estimate.xlsx';
+            a.download = response.headers.get('content-disposition')?.split('filename="')[1]?.replace('"', '') || `${docType}.xlsx`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
-            alert('견적서가 생성되었습니다.');
+            alert(`${label}가 생성되었습니다.`);
           } else {
-            alert('견적서 생성에 실패했습니다.');
+            const errorData = await response.json().catch(() => ({}));
+            alert(errorData.error || `${label} 생성에 실패했습니다.`);
           }
         } catch (error) {
           alert('서버에 연결할 수 없습니다.\n견적서 서버를 먼저 시작해주세요.\n\n터미널에서 다음 명령으로 시작:\npython3 estimate_server.py');
         }
       }
+
+      documentButtons.forEach(({ docType, buttonId, label }) => {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+        button.addEventListener('click', async () => {
+          await generateDocument(docType, label);
+        });
+      });
 
       taxTypeInput.addEventListener('change', () => {
         calculateAll();

@@ -17,32 +17,9 @@ function getChosung(text) {
 }
 
 function initTransactionListPage() {
-  const customers = [
-    '삼호건설', '대신산업', '성진토건', '동양건설', '한솔기업', '대림건설', '태성건축', '금강개발', '신화건설', '정운산업'
-  ];
-
-  const sampleData = [
-    { id: '2026-0001', customer: '삼호건설', project: '광교 리모델링', details: '철거 및 내장 공사', amount: '12,500,000', created: '2026-04-01', updated: '2026-04-05' },
-    { id: '2026-0002', customer: '대신산업', project: '상암 APT 신축', details: '콘크리트 타설', amount: '35,000,000', created: '2026-03-22', updated: '2026-03-24' },
-    { id: '2026-0003', customer: '성진토건', project: '송파 빌딩 보수', details: '외벽 도장', amount: '8,900,000', created: '2026-03-15', updated: '2026-03-18' },
-    { id: '2026-0004', customer: '동양건설', project: '서초 오피스 증축', details: '철골 구조물 설치', amount: '22,000,000', created: '2026-03-10', updated: '2026-03-14' },
-    { id: '2026-0005', customer: '한솔기업', project: '구월동 상가 리모델링', details: '전기/설비 공사', amount: '14,200,000', created: '2026-03-08', updated: '2026-03-12' },
-    { id: '2026-0006', customer: '대림건설', project: '부천 아파트 외장', details: '창호 및 단열', amount: '18,400,000', created: '2026-03-01', updated: '2026-03-05' },
-    { id: '2026-0007', customer: '태성건축', project: '강남 오피스 리노베이션', details: '내장 및 마감', amount: '11,600,000', created: '2026-02-25', updated: '2026-02-28' },
-    { id: '2026-0008', customer: '금강개발', project: '수원 빌딩 증축', details: '철근 콘크리트 공사', amount: '28,900,000', created: '2026-02-20', updated: '2026-02-24' },
-    { id: '2026-0009', customer: '신화건설', project: '영등포 상가 신축', details: '기초 및 골조', amount: '26,000,000', created: '2026-02-18', updated: '2026-02-22' },
-    { id: '2026-0010', customer: '정운산업', project: '안양 주택 리모델링', details: '욕실 및 주방 교체', amount: '9,800,000', created: '2026-02-10', updated: '2026-02-14' },
-    { id: '2026-0011', customer: '삼호건설', project: '인천 물류창고 신축', details: '지붕 및 외벽 마감', amount: '31,500,000', created: '2026-02-02', updated: '2026-02-06' },
-    { id: '2026-0012', customer: '대신산업', project: '성남 오피스 리모델링', details: '내부 칸막이 설치', amount: '13,000,000', created: '2026-01-30', updated: '2026-02-03' },
-    { id: '2026-0013', customer: '성진토건', project: '분당 아파트 보수', details: '발코니 방수', amount: '7,400,000', created: '2026-01-25', updated: '2026-01-29' },
-    { id: '2026-0014', customer: '동양건설', project: '광주 상가 리모델링', details: '외부 간판 및 조명', amount: '6,200,000', created: '2026-01-20', updated: '2026-01-24' },
-    { id: '2026-0015', customer: '한솔기업', project: '의정부 주택 신축', details: '기초 공사', amount: '19,000,000', created: '2026-01-15', updated: '2026-01-19' },
-    { id: '2026-0016', customer: '대림건설', project: '퇴계원 공장 리모델링', details: '배관 및 설비 교체', amount: '16,300,000', created: '2026-01-12', updated: '2026-01-16' },
-    { id: '2026-0017', customer: '태성건축', project: '청주 오피스 보수', details: '전기 및 설비', amount: '10,900,000', created: '2026-01-08', updated: '2026-01-12' },
-    { id: '2026-0018', customer: '금강개발', project: '대전 상가 신축', details: '내부 마감', amount: '23,500,000', created: '2026-01-05', updated: '2026-01-09' },
-    { id: '2026-0019', customer: '신화건설', project: '광명 아파트 외벽 보수', details: '방수 및 단열', amount: '12,700,000', created: '2025-12-28', updated: '2026-01-02' },
-    { id: '2026-0020', customer: '정운산업', project: '수원 오피스 리모델링', details: '데크 및 입구 공사', amount: '14,800,000', created: '2025-12-20', updated: '2025-12-24' }
-  ];
+  const customersFromMaster = JSON.parse(localStorage.getItem('customers') || '[]')
+    .map(customer => (customer && customer.name ? String(customer.name).trim() : ''))
+    .filter(Boolean);
 
   // 로컬스토리지에서 데이터만 로드 (초기화 하지 않음)
   const transactionsData = JSON.parse(localStorage.getItem('transactions') || '{}');
@@ -68,6 +45,12 @@ function initTransactionListPage() {
       updated: new Date().toISOString().split('T')[0]
     });
   });
+
+  // 거래처관리 기준을 우선 사용하고, 주문 데이터의 거래처를 보조로 합쳐 자동완성 누락을 방지한다.
+  const customersFromTransactions = transactions
+    .map(item => (item.customer ? String(item.customer).trim() : ''))
+    .filter(Boolean);
+  const customers = [...new Set([...customersFromMaster, ...customersFromTransactions])].sort();
 
   const pageSize = 10;
   let currentPage = 1;

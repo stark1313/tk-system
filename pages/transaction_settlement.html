@@ -202,6 +202,60 @@
       background-color: #f5f5f5;
     }
 
+    .payment-order-selector {
+      border: 1px solid #dee2e6;
+      border-radius: 0.375rem;
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 0.5rem;
+      background: #fff;
+    }
+
+    .payment-order-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.35rem 0.25rem;
+      border-bottom: 1px solid #f1f3f5;
+    }
+
+    .payment-order-item:last-child {
+      border-bottom: none;
+    }
+
+    .payment-order-main {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+
+    .payment-order-code {
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    .payment-order-amount {
+      color: #c62828;
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
+
+    .payment-order-actions {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.4rem;
+      gap: 0.5rem;
+    }
+
+    .payment-order-empty {
+      color: #666;
+      font-size: 0.85rem;
+      padding: 0.5rem;
+      text-align: center;
+    }
+
     @media (max-width: 992px) {
       .settlement-content { 
         grid-template-columns: 1fr;
@@ -365,11 +419,17 @@
           </div>
           <div class="mb-3">
             <label for="paymentAmount" class="form-label">입금액</label>
-            <input type="number" class="form-control" id="paymentAmount" placeholder="0">
+            <input type="number" class="form-control" id="paymentAmount" placeholder="미입력 시 대체주문 잔액 합계 자동입력">
+            <div class="form-text">입금액을 비워두면 대체 주문의 미수 잔액 합계가 자동 반영됩니다.</div>
           </div>
           <div class="mb-3">
-            <label for="paymentOrders" class="form-label">대체 주문 (쉼표로 구분)</label>
-            <input type="text" class="form-control" id="paymentOrders" placeholder="2026-0001, 2026-0002">
+            <label class="form-label">대체 주문 (선택)</label>
+            <div class="payment-order-actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAllPaymentOrdersBtn">전체선택</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="clearPaymentOrdersBtn">선택해제</button>
+            </div>
+            <div id="paymentOrdersSelector" class="payment-order-selector"></div>
+            <div class="form-text">입금 대상 주문을 선택하세요. 선택한 주문들에 자동 배분됩니다.</div>
           </div>
         </div>
         <div class="modal-footer">
@@ -417,6 +477,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="../js/db_sync.js"></script>
   <script>
     // 초성 검색 함수
     function getChosung(text) {
@@ -440,6 +501,198 @@
     const paymentConfirmModal = new bootstrap.Modal(document.getElementById('paymentConfirmModal'));
     const paymentSaveModal = new bootstrap.Modal(document.getElementById('paymentSaveModal'));
     let pendingPaymentData = {};
+
+    function getOrderStatusText(balance) {
+      if (!balance || balance.paid <= 0) return '미입금';
+      if (balance.remaining <= 0) return '입금완료';
+      return '부분입금';
+    }
+
+    function getOrderStatusClass(balance) {
+      if (!balance || balance.paid <= 0) return 'status-unpaid';
+      if (balance.remaining <= 0) return 'status-paid';
+      return 'status-partial';
+    }
+
+    function computeOrderBalances(customerName, paymentsOverride) {
+      const customerData = settlementData[customerName];
+      const balances = {};
+      if (!customerData) return balances;
+
+      customerData.sales.forEach(sale => {
+        balances[sale.orderId] = {
+          total: sale.amount,
+          paid: 0,
+          remaining: sale.amount
+        };
+      });
+
+      const paymentList = (paymentsOverride || customerData.payments || []).map(payment => ({
+        date: payment.date,
+        amount: Number(payment.amount) || 0,
+        targetOrders: Array.isArray(payment.targetOrders) ? payment.targetOrders : [],
+        allocations: Array.isArray(payment.allocations) ? payment.allocations : []
+      }));
+
+      paymentList.sort((a, b) => {
+        const aDate = a.date || '';
+        const bDate = b.date || '';
+        return aDate.localeCompare(bDate);
+      });
+
+      paymentList.forEach(payment => {
+        let allocations = payment.allocations;
+
+        if (!allocations.length && payment.amount > 0) {
+          let remainingAmount = payment.amount;
+          const candidateOrders = (payment.targetOrders.length ? payment.targetOrders : customerData.sales.map(s => s.orderId))
+            .filter(orderId => balances[orderId]);
+          allocations = [];
+
+          candidateOrders.forEach(orderId => {
+            if (remainingAmount <= 0) return;
+            const balance = balances[orderId];
+            const orderRemaining = Math.max(0, balance.total - balance.paid);
+            if (orderRemaining <= 0) return;
+            const allocated = Math.min(orderRemaining, remainingAmount);
+            if (allocated > 0) {
+              allocations.push({ orderId, amount: allocated });
+              remainingAmount -= allocated;
+            }
+          });
+        }
+
+        allocations.forEach(allocation => {
+          const orderId = allocation.orderId;
+          const allocatedAmount = Number(allocation.amount) || 0;
+          if (!balances[orderId] || allocatedAmount <= 0) return;
+          balances[orderId].paid += allocatedAmount;
+        });
+      });
+
+      Object.keys(balances).forEach(orderId => {
+        const balance = balances[orderId];
+        balance.paid = Math.min(balance.paid, balance.total);
+        balance.remaining = Math.max(0, balance.total - balance.paid);
+      });
+
+      return balances;
+    }
+
+    function createPaymentAllocation(customerName, targetOrders, requestedAmount) {
+      const customerData = settlementData[customerName];
+      if (!customerData) return { amount: 0, allocations: [] };
+
+      const balances = computeOrderBalances(customerName);
+      const normalizedTargets = targetOrders
+        .map(orderId => orderId.trim())
+        .filter(orderId => orderId && balances[orderId]);
+      const uniqueTargets = [...new Set(normalizedTargets)];
+
+      const candidateOrders = uniqueTargets.length
+        ? uniqueTargets
+        : customerData.sales.map(sale => sale.orderId).filter(orderId => balances[orderId] && balances[orderId].remaining > 0);
+
+      const totalRemaining = candidateOrders.reduce((sum, orderId) => sum + (balances[orderId]?.remaining || 0), 0);
+      const inputAmount = Number(requestedAmount) || 0;
+      const amountToAllocate = inputAmount > 0 ? Math.min(inputAmount, totalRemaining) : totalRemaining;
+
+      let left = amountToAllocate;
+      const allocations = [];
+
+      candidateOrders.forEach(orderId => {
+        if (left <= 0) return;
+        const remaining = balances[orderId]?.remaining || 0;
+        if (remaining <= 0) return;
+        const allocated = Math.min(remaining, left);
+        if (allocated > 0) {
+          allocations.push({ orderId, amount: allocated });
+          left -= allocated;
+        }
+      });
+
+      return {
+        amount: amountToAllocate,
+        allocations,
+        normalizedTargets: uniqueTargets
+      };
+    }
+
+    function getSelectedPaymentOrders() {
+      return Array.from(document.querySelectorAll('.payment-order-checkbox:checked')).map(el => el.value);
+    }
+
+    function renderPaymentOrderSelector(customerName) {
+      const selector = document.getElementById('paymentOrdersSelector');
+      if (!selector) return;
+
+      const balances = computeOrderBalances(customerName);
+      const customerData = settlementData[customerName];
+      if (!customerData || !customerData.sales || customerData.sales.length === 0) {
+        selector.innerHTML = '<div class="payment-order-empty">선택 가능한 주문이 없습니다.</div>';
+        return;
+      }
+
+      const rows = customerData.sales
+        .map(sale => {
+          const remaining = balances[sale.orderId]?.remaining || 0;
+          return { orderId: sale.orderId, remaining };
+        })
+        .filter(row => row.remaining > 0)
+        .sort((a, b) => a.orderId.localeCompare(b.orderId));
+
+      if (!rows.length) {
+        selector.innerHTML = '<div class="payment-order-empty">모든 주문이 입금완료 상태입니다.</div>';
+        return;
+      }
+
+      selector.innerHTML = rows.map(row => `
+        <label class="payment-order-item" for="order-check-${row.orderId}">
+          <span class="payment-order-main">
+            <input type="checkbox" class="form-check-input payment-order-checkbox" id="order-check-${row.orderId}" value="${row.orderId}" checked>
+            <span class="payment-order-code">${row.orderId}</span>
+          </span>
+          <span class="payment-order-amount">미수 ${row.remaining.toLocaleString()}원</span>
+        </label>
+      `).join('');
+    }
+
+    function updateCustomerSummary(customerName) {
+      const customerData = settlementData[customerName];
+      if (!customerData) return;
+      customerData.totalSale = customerData.sales.reduce((sum, s) => sum + s.amount, 0);
+      customerData.totalPaid = customerData.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    }
+
+    function syncTransactionPaymentStatus(customerName) {
+      const balances = computeOrderBalances(customerName);
+      const transactions = JSON.parse(localStorage.getItem('transactions') || '{}');
+      let changed = false;
+
+      Object.keys(transactions).forEach(orderId => {
+        const order = transactions[orderId];
+        if (!order || order.customer !== customerName || !balances[orderId]) return;
+        const status = balances[orderId].remaining <= 0 ? 'paid' : (balances[orderId].paid > 0 ? 'partial' : 'unpaid');
+        if (order.paymentStatus !== status) {
+          order.paymentStatus = status;
+          changed = true;
+        }
+      });
+
+      if (changed) {
+        localStorage.setItem('transactions', JSON.stringify(transactions));
+      }
+
+      if (settlementData[customerName]) {
+        settlementData[customerName].sales = settlementData[customerName].sales.map(sale => {
+          const balance = balances[sale.orderId];
+          return {
+            ...sale,
+            status: balance ? (balance.remaining <= 0 ? 'paid' : (balance.paid > 0 ? 'partial' : 'unpaid')) : sale.status
+          };
+        });
+      }
+    }
 
     function initSettlement() {
       const savedPayments = JSON.parse(localStorage.getItem('payments') || '{}');
@@ -489,6 +742,8 @@
         const data = settlementData[customerName];
         data.totalSale = data.sales.reduce((sum, s) => sum + s.amount, 0);
         data.totalPaid = data.payments.reduce((sum, p) => sum + p.amount, 0);
+        syncTransactionPaymentStatus(customerName);
+        updateCustomerSummary(customerName);
       });
 
       filteredCustomers = Object.keys(settlementData).sort();
@@ -654,6 +909,8 @@
     function showDetailView(customerName) {
       currentCustomer = customerName;
       const data = settlementData[customerName];
+      updateCustomerSummary(customerName);
+      const orderBalances = computeOrderBalances(customerName);
 
       document.getElementById('detailCustomerName').textContent = customerName;
       document.getElementById('detailCustomerInfo').innerHTML = 
@@ -666,8 +923,8 @@
           <td>${sale.month}</td>
           <td class="right-align">${sale.amount.toLocaleString()}</td>
           <td>
-            <span class="status-badge ${sale.status === 'paid' ? 'status-paid' : 'status-unpaid'}" style="font-size:10px;">
-              ${sale.status === 'paid' ? '입금완료' : '미입금'}
+            <span class="status-badge ${getOrderStatusClass(orderBalances[sale.orderId])}" style="font-size:10px;">
+              ${getOrderStatusText(orderBalances[sale.orderId])}
             </span>
           </td>
         </tr>
@@ -701,46 +958,82 @@
     document.getElementById('addPaymentBtn').addEventListener('click', () => {
       document.getElementById('paymentDate').value = '';
       document.getElementById('paymentAmount').value = '';
-      document.getElementById('paymentOrders').value = '';
+      renderPaymentOrderSelector(currentCustomer);
       paymentModal.show();
+    });
+
+    document.getElementById('selectAllPaymentOrdersBtn').addEventListener('click', () => {
+      document.querySelectorAll('.payment-order-checkbox').forEach(el => {
+        if (!el.disabled) el.checked = true;
+      });
+    });
+
+    document.getElementById('clearPaymentOrdersBtn').addEventListener('click', () => {
+      document.querySelectorAll('.payment-order-checkbox').forEach(el => {
+        if (!el.disabled) el.checked = false;
+      });
     });
 
     document.getElementById('savePaymentBtn').addEventListener('click', () => {
       const date = document.getElementById('paymentDate').value;
-      const amount = parseInt(document.getElementById('paymentAmount').value) || 0;
-      const orders = document.getElementById('paymentOrders').value
-        .split(',')
-        .map(o => o.trim())
-        .filter(o => o);
+      const amountInput = parseInt(document.getElementById('paymentAmount').value) || 0;
+      const orders = getSelectedPaymentOrders();
 
-      if (!date || amount <= 0) {
-        alert('입금일자와 입금액을 입력해주세요.');
+      const allocationResult = createPaymentAllocation(currentCustomer, orders, amountInput);
+      const amount = allocationResult.amount;
+      const allocations = allocationResult.allocations;
+      const normalizedTargets = allocationResult.normalizedTargets;
+
+      if (!date) {
+        alert('입금일자를 입력해주세요.');
         return;
       }
 
+      if (normalizedTargets.length === 0) {
+        alert('입금 대상 주문을 하나 이상 선택해주세요.');
+        return;
+      }
+
+      if (amount <= 0 || allocations.length === 0) {
+        alert('입금 가능한 미수금이 없습니다.');
+        return;
+      }
+
+      document.getElementById('paymentAmount').value = amount;
+
       // 확인을 위해 데이터 임시 저장
-      pendingPaymentData = { date, amount, targetOrders: orders };
+      pendingPaymentData = {
+        date,
+        amount,
+        targetOrders: normalizedTargets,
+        allocations
+      };
       
       // 확인 모달 표시
       paymentConfirmModal.show();
     });
 
     document.getElementById('paymentConfirmBtn').addEventListener('click', () => {
-      const { date, amount, targetOrders } = pendingPaymentData;
+      const { date, amount, targetOrders, allocations } = pendingPaymentData;
       
-      if (!date || amount <= 0) {
-        alert('입금일자와 입금액을 입력해주세요.');
+      if (!date || amount <= 0 || !allocations || allocations.length === 0) {
+        alert('입금 데이터가 올바르지 않습니다.');
         return;
       }
 
       if (!settlementData[currentCustomer].payments) {
         settlementData[currentCustomer].payments = [];
       }
-      settlementData[currentCustomer].payments.push({ date, amount, targetOrders });
+      settlementData[currentCustomer].payments.push({ date, amount, targetOrders, allocations });
+
+      updateCustomerSummary(currentCustomer);
+      syncTransactionPaymentStatus(currentCustomer);
 
       const payments = JSON.parse(localStorage.getItem('payments') || '{}');
       payments[currentCustomer] = settlementData[currentCustomer].payments;
       localStorage.setItem('payments', JSON.stringify(payments));
+
+      renderSettlementList();
 
       paymentModal.hide();
       paymentConfirmModal.hide();
