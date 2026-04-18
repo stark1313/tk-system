@@ -201,6 +201,8 @@
     const saveBtn = document.getElementById('save-btn');
     const addCustomerBtn = document.getElementById('add-customer-btn');
     const tableBody = document.getElementById('customer-tbody');
+    const saveConfirmModal = new bootstrap.Modal(document.getElementById('saveConfirmModal'));
+    const saveConfirmBtn = document.getElementById('saveConfirmBtn');
     const saveModal = new bootstrap.Modal(document.getElementById('saveModal'));
 
     function loadCustomers() {

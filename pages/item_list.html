@@ -197,7 +197,10 @@
     const saveBtn = document.getElementById('save-btn');
     const addItemBtn = document.getElementById('add-item-btn');
     const tableBody = document.getElementById('item-tbody');
+    const saveConfirmModal = new bootstrap.Modal(document.getElementById('saveConfirmModal'));
+    const saveConfirmBtn = document.getElementById('saveConfirmBtn');
     const saveModal = new bootstrap.Modal(document.getElementById('saveModal'));
+    const saveModalBtn = document.getElementById('saveModalBtn');
 
     function loadItems() {
       const saved = localStorage.getItem('items');
