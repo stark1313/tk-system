@@ -71,6 +71,32 @@
     .customer-suggestions li:hover {
       background: #f8f9fa;
     }
+    .product-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 0.25rem;
+      max-height: 220px;
+      overflow-y: auto;
+      display: none;
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .product-suggestions.show {
+      display: block;
+    }
+    .product-suggestions li {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+    }
+    .product-suggestions li:hover {
+      background: #f8f9fa;
+    }
     .items-header {
       display: flex;
       justify-content: space-between;
@@ -466,7 +492,7 @@
           <td><button type="button" class="minus-btn" data-action="remove">-</button></td>
           <td style="position: relative;">
             <input type="text" class="form-control item-product" value="${data.product || ''}" ${editMode ? '' : 'disabled'} placeholder="품목" autocomplete="off">
-            <ul class="product-suggestions" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 10; background: #fff; border: 1px solid #ddd; border-radius: 0.25rem; max-height: 220px; overflow-y: auto; display: none; list-style: none; padding: 0; margin: 0;"></ul>
+            <ul class="product-suggestions list-group"></ul>
           </td>
           <td><input type="text" class="form-control item-spec" value="${data.spec || ''}" ${editMode ? '' : 'disabled'}></td>
           <td><input type="text" class="form-control item-unit" value="${data.unit || ''}" ${editMode ? '' : 'disabled'}></td>
@@ -492,7 +518,7 @@
         function showProductSuggestions(value) {
           if (!value) {
             productSuggestions.innerHTML = '';
-            productSuggestions.style.display = 'none';
+            productSuggestions.classList.remove('show');
             return;
           }
 
@@ -502,16 +528,16 @@
           );
 
           productSuggestions.innerHTML = matched.slice(0, 6).map(item => `
-            <li class="list-group-item list-group-item-action suggestion-item" role="option" data-name="${item.name}" data-spec="${item.spec}" data-unit="${item.unit}" data-price="${item.unitPrice}" data-remark="${item.remark || ''}" style="cursor: pointer; padding: 0.5rem 0.75rem;">
+            <li class="list-group-item list-group-item-action suggestion-item" role="option" data-name="${item.name}" data-spec="${item.spec}" data-unit="${item.unit}" data-price="${item.unitPrice}" data-remark="${item.remark || ''}">
               <strong>${item.name}</strong> <small style="color: #666;">- ${item.spec} (${item.unit})</small>
             </li>
           `).join('');
-          productSuggestions.style.display = matched.length > 0 ? 'block' : 'none';
+          productSuggestions.classList.toggle('show', matched.length > 0);
         }
 
         function clearProductSuggestions() {
           productSuggestions.innerHTML = '';
-          productSuggestions.style.display = 'none';
+          productSuggestions.classList.remove('show');
         }
 
         productInput.addEventListener('input', () => {
