@@ -728,6 +728,11 @@
     document.getElementById('paymentConfirmBtn').addEventListener('click', () => {
       const { date, amount, targetOrders } = pendingPaymentData;
       
+      if (!date || amount <= 0) {
+        alert('입금일자와 입금액을 입력해주세요.');
+        return;
+      }
+
       if (!settlementData[currentCustomer].payments) {
         settlementData[currentCustomer].payments = [];
       }
@@ -737,12 +742,19 @@
       payments[currentCustomer] = settlementData[currentCustomer].payments;
       localStorage.setItem('payments', JSON.stringify(payments));
 
-      paymentConfirmModal.hide();
       paymentModal.hide();
-      paymentSaveModal.show();
+      paymentConfirmModal.hide();
       
-      showDetailView(currentCustomer);
+      setTimeout(() => {
+        paymentSaveModal.show();
+        showDetailView(currentCustomer);
+      }, 300);
+      
       pendingPaymentData = {};
+    });
+
+    document.getElementById('paymentSaveBtn').addEventListener('click', () => {
+      paymentSaveModal.hide();
     });
 
     initSettlement();
