@@ -44,29 +44,14 @@ function initTransactionListPage() {
     { id: '2026-0020', customer: '정운산업', project: '수원 오피스 리모델링', details: '데크 및 입구 공사', amount: '14,800,000', created: '2025-12-20', updated: '2025-12-24' }
   ];
 
-  // Initialize localStorage with sample data on first load
-  let transactionsData = JSON.parse(localStorage.getItem('transactions') || '{}');
-  
-  if (Object.keys(transactionsData).length === 0) {
-    // First time load - initialize with sample data
-    sampleData.forEach((item) => {
-      transactionsData[item.id] = {
-        customer: item.customer,
-        projectName: item.project,
-        deliveryYear: '2026',
-        deliveryMonth: '04',
-        taxType: 'include',
-        items: [{ product: item.details, spec: '', unit: '', quantity: 1, unitPrice: parseInt(item.amount.replace(/,/g, '')), remark: '' }]
-      };
-    });
-    localStorage.setItem('transactions', JSON.stringify(transactionsData));
-  }
-  
-  // Load transactions from localStorage
-  transactionsData = JSON.parse(localStorage.getItem('transactions') || '{}');
+  // 로컬스토리지에서 데이터만 로드 (초기화 하지 않음)
+  const transactionsData = JSON.parse(localStorage.getItem('transactions') || '{}');
   const transactions = [];
   
   Object.keys(transactionsData).forEach(id => {
+    // "new"인 거래번호는 제외
+    if (id === 'new') return;
+    
     const data = transactionsData[id];
     const amount = data.items.reduce((sum, item) => {
       const supply = item.quantity * item.unitPrice;
