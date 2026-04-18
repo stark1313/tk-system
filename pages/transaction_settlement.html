@@ -407,6 +407,7 @@
       const savedTransactions = JSON.parse(localStorage.getItem('transactions') || '{}');
       const customers = JSON.parse(localStorage.getItem('customers') || '[]');
 
+      // 거래처리스트의 거래처 먼저 초기화
       customers.forEach(customer => {
         const customerName = customer.name;
         settlementData[customerName] = {
@@ -418,21 +419,31 @@
         };
       });
 
+      // 주문 데이터에서 거래처를 추출하고, 없는 거래처는 자동 추가
       Object.keys(savedTransactions).forEach(orderId => {
         const order = savedTransactions[orderId];
-        if (settlementData[order.customer]) {
-          const amount = order.items.reduce((sum, item) => {
-            const supply = item.quantity * item.unitPrice;
-            const tax = order.taxType === 'exclude' ? 0 : Math.round(supply * 0.1);
-            return sum + supply + tax;
-          }, 0);
-          settlementData[order.customer].sales.push({
-            orderId,
-            month: order.deliveryMonth,
-            amount: amount,
-            status: order.paymentStatus || 'unpaid'
-          });
+        if (!settlementData[order.customer]) {
+          // 거래처리스트에 없는 거래처를 동적으로 추가
+          settlementData[order.customer] = {
+            name: order.customer,
+            sales: [],
+            payments: savedPayments[order.customer] || [],
+            totalSale: 0,
+            totalPaid: 0
+          };
         }
+        
+        const amount = order.items.reduce((sum, item) => {
+          const supply = item.quantity * item.unitPrice;
+          const tax = order.taxType === 'exclude' ? 0 : Math.round(supply * 0.1);
+          return sum + supply + tax;
+        }, 0);
+        settlementData[order.customer].sales.push({
+          orderId,
+          month: order.deliveryMonth,
+          amount: amount,
+          status: order.paymentStatus || 'unpaid'
+        });
       });
 
       Object.keys(settlementData).forEach(customerName => {
