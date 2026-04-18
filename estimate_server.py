@@ -22,10 +22,10 @@ import platform
 import threading
 from io import BytesIO
 
-# 템플릿 파일 경로
-TEMPLATE_PATH = "/Users/stark1313/시스템개발/01. 사무실 주문관리 시스템/서식업로드/양식_견적서.xlsx"
-OUTPUT_DIR = os.path.expanduser("~/Desktop")
-DATA_ROOT = os.path.expanduser("~/.tk_system")
+# 템플릿 파일 경로 (로컬 개발용 legacy 경로는 환경변수로만 사용)
+TEMPLATE_PATH = os.environ.get("LEGACY_TEMPLATE_PATH", "")
+DATA_ROOT = os.path.expanduser(os.environ.get("DATA_ROOT", "~/.tk_system"))
+OUTPUT_DIR = os.path.expanduser(os.environ.get("OUTPUT_DIR", os.path.join(DATA_ROOT, "output")))
 DB_PATH = os.path.join(DATA_ROOT, "tk_system.db")
 TEMPLATES_DIR = os.path.join(DATA_ROOT, "templates")
 ALLOWED_TEMPLATE_TYPES = {
@@ -72,7 +72,7 @@ def resolve_template_path(template_type):
     if uploaded and os.path.exists(uploaded):
         return uploaded
 
-    if template_type == "estimate" and os.path.exists(TEMPLATE_PATH):
+    if template_type == "estimate" and TEMPLATE_PATH and os.path.exists(TEMPLATE_PATH):
         return TEMPLATE_PATH
 
     return None
@@ -311,6 +311,9 @@ def generate_document(data, doc_type):
 def open_file(filepath):
     """파일 자동 실행"""
     try:
+        # Cloud environments should not attempt opening desktop applications.
+        if os.environ.get('RENDER') or os.environ.get('DISABLE_AUTO_OPEN') == '1':
+            return
         if platform.system() == 'Darwin':
             subprocess.Popen(['open', filepath])
         elif platform.system() == 'Windows':
@@ -492,12 +495,12 @@ class EstimateHandler(BaseHTTPRequestHandler):
         """로그 출력 억제"""
         pass
 
-def run_server(port=5050):
+def run_server(port=5050, host='0.0.0.0'):
     """HTTP 서버 실행"""
     init_db()
     ensure_templates_dir()
-    server = HTTPServer(('localhost', port), EstimateHandler)
-    print(f"견적서 서버 시작: http://localhost:{port}")
+    server = HTTPServer((host, port), EstimateHandler)
+    print(f"견적서 서버 시작: http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -505,7 +508,7 @@ def run_server(port=5050):
         server.shutdown()
 
 if __name__ == '__main__':
-    port = 5050
+    port = int(os.environ.get('PORT', '5050'))
     if len(sys.argv) > 1:
         try:
             port = int(sys.argv[1])

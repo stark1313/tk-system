@@ -1,5 +1,5 @@
 (function () {
-  const API_BASE = 'http://localhost:5050';
+  const API_BASE = (window.TK_CONFIG && window.TK_CONFIG.API_BASE) || 'http://localhost:5050';
   const SYNC_ENDPOINT = API_BASE + '/api/data';
   const STORAGE_KEYS = ['customers', 'items', 'transactions', 'payments'];
   const META_KEY = '__tk_last_sync';

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: tk-system-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python estimate_server.py
+    envVars:
+      - key: DATA_ROOT
+        value: /tmp/tk_system_data
+      - key: DISABLE_AUTO_OPEN
+        value: "1"
