@@ -1,33 +1,41 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-견적서 생성 간단 HTTP 서버
-localhost:5050에서 실행
-"""
-
-import json
-import sys
-import os
-import sqlite3
 import base64
+import json
+import mimetypes
+import os
+import platform
 import re
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs
-from openpyxl import load_workbook
+import sqlite3
+import subprocess
+import sys
+import threading
 from copy import copy
 from datetime import datetime
-import subprocess
-import platform
-import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO
 
-# 템플릿 파일 경로 (로컬 개발용 legacy 경로는 환경변수로만 사용)
+from openpyxl import load_workbook
+
+try:
+    from supabase import Client, create_client
+except ImportError:
+    Client = None
+    create_client = None
+
+
 TEMPLATE_PATH = os.environ.get("LEGACY_TEMPLATE_PATH", "")
 DATA_ROOT = os.path.expanduser(os.environ.get("DATA_ROOT", "~/.tk_system"))
 OUTPUT_DIR = os.path.expanduser(os.environ.get("OUTPUT_DIR", os.path.join(DATA_ROOT, "output")))
 DB_PATH = os.path.join(DATA_ROOT, "tk_system.db")
 TEMPLATES_DIR = os.path.join(DATA_ROOT, "templates")
+SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").strip()
+SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY") or "").strip()
+SUPABASE_STATE_TABLE = os.environ.get("SUPABASE_STATE_TABLE", "tk_app_state")
+SUPABASE_STATE_ROW_ID = os.environ.get("SUPABASE_STATE_ROW_ID", "primary")
+SUPABASE_TEMPLATE_BUCKET = os.environ.get("SUPABASE_TEMPLATE_BUCKET", "tk-templates")
+SUPABASE_ENABLED = bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
 ALLOWED_TEMPLATE_TYPES = {
     "estimate": "견적서",
     "delivery": "납품서",
@@ -35,22 +43,153 @@ ALLOWED_TEMPLATE_TYPES = {
     "statement": "거래명세서",
     "taxInvoice": "세금계산서",
 }
+DEFAULT_APP_DATA = {
+    "customers": [],
+    "items": [],
+    "transactions": {},
+    "payments": {},
+}
+
+_SUPABASE_CLIENT = None
+
+
+def now_iso():
+    return datetime.now().isoformat()
+
+
+def normalize_app_data(data):
+    normalized = dict(DEFAULT_APP_DATA)
+    if isinstance(data, dict):
+        for key in normalized:
+            value = data.get(key)
+            if isinstance(normalized[key], list):
+                normalized[key] = value if isinstance(value, list) else []
+            else:
+                normalized[key] = value if isinstance(value, dict) else {}
+    return normalized
 
 
 def sanitize_filename(filename):
-    """파일명 정리"""
     base = os.path.basename(filename or "template.xlsx")
     return re.sub(r"[^A-Za-z0-9._-]", "_", base)
 
 
-def ensure_templates_dir():
+def ensure_local_dirs():
     os.makedirs(DATA_ROOT, exist_ok=True)
     os.makedirs(TEMPLATES_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-def get_uploaded_template_path(template_type):
-    """업로드된 템플릿 파일 경로 조회"""
-    ensure_templates_dir()
+def copy_cell_style(source_cell, target_cell):
+    try:
+        if source_cell.font:
+            target_cell.font = copy(source_cell.font)
+        if source_cell.border:
+            target_cell.border = copy(source_cell.border)
+        if source_cell.fill:
+            target_cell.fill = copy(source_cell.fill)
+        if source_cell.number_format:
+            target_cell.number_format = copy(source_cell.number_format)
+        if source_cell.protection:
+            target_cell.protection = copy(source_cell.protection)
+        if source_cell.alignment:
+            target_cell.alignment = copy(source_cell.alignment)
+    except Exception:
+        pass
+
+
+def replace_variables(ws, data):
+    replacements = {
+        "{납품월}": data.get("deliveryMonth", ""),
+        "{거래처명}": data.get("customer", ""),
+        "{공사명}": data.get("projectName", ""),
+    }
+
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value and isinstance(cell.value, str):
+                for placeholder, value in replacements.items():
+                    if placeholder in cell.value:
+                        cell.value = cell.value.replace(placeholder, str(value))
+
+    items = data.get("items", [])
+    start_row = 9
+    template_row = 9
+
+    for idx, item in enumerate(items[:20]):
+        row_num = start_row + idx
+
+        for col_letter in ["A", "B", "C", "D", "E", "F", "G"]:
+            source_cell = ws[f"{col_letter}{template_row}"]
+            target_cell = ws[f"{col_letter}{row_num}"]
+            copy_cell_style(source_cell, target_cell)
+
+        quantity = float(item.get("quantity", 0) or 0)
+        unit_price = float(item.get("unitPrice", 0) or 0)
+
+        ws[f"A{row_num}"].value = item.get("product", "")
+        ws[f"B{row_num}"].value = item.get("spec", "")
+        ws[f"C{row_num}"].value = quantity
+        ws[f"D{row_num}"].value = item.get("unit", "")
+        ws[f"E{row_num}"].value = unit_price
+        ws[f"F{row_num}"].value = quantity * unit_price
+        ws[f"G{row_num}"].value = item.get("remark", "")
+
+
+def get_supabase_client():
+    global _SUPABASE_CLIENT
+
+    if not SUPABASE_ENABLED:
+        return None
+
+    if create_client is None:
+        raise RuntimeError("supabase 패키지가 설치되지 않았습니다. requirements.txt를 다시 설치해주세요.")
+
+    if _SUPABASE_CLIENT is None:
+        _SUPABASE_CLIENT = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    return _SUPABASE_CLIENT
+
+
+def ensure_supabase_bucket():
+    client = get_supabase_client()
+    if not client:
+        return
+
+    try:
+        client.storage.get_bucket(SUPABASE_TEMPLATE_BUCKET)
+    except Exception:
+        client.storage.create_bucket(
+            SUPABASE_TEMPLATE_BUCKET,
+            options={
+                "public": False,
+                "allowed_mime_types": [
+                    "application/vnd.ms-excel",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/vnd.ms-excel.sheet.macroEnabled.12",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+                    "application/vnd.ms-excel.template.macroEnabled.12",
+                ],
+                "file_size_limit": 20 * 1024 * 1024,
+            },
+        )
+
+
+def verify_supabase_table():
+    client = get_supabase_client()
+    if not client:
+        return
+
+    try:
+        client.table(SUPABASE_STATE_TABLE).select("id").limit(1).execute()
+    except Exception as error:
+        raise RuntimeError(
+            "Supabase 테이블이 준비되지 않았습니다. README의 supabase_schema.sql을 먼저 실행해주세요. "
+            f"원인: {error}"
+        ) from error
+
+
+def get_local_template_path(template_type):
+    ensure_local_dirs()
     prefix = f"{template_type}__"
     candidates = []
     for name in os.listdir(TEMPLATES_DIR):
@@ -62,36 +201,90 @@ def get_uploaded_template_path(template_type):
     if not candidates:
         return None
 
-    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    candidates.sort(key=os.path.getmtime, reverse=True)
     return candidates[0]
 
 
-def resolve_template_path(template_type):
-    """템플릿 경로 결정: 업로드본 우선, 견적서는 기존 경로 fallback"""
-    uploaded = get_uploaded_template_path(template_type)
-    if uploaded and os.path.exists(uploaded):
-        return uploaded
+def get_supabase_template_entries(template_type):
+    client = get_supabase_client()
+    if not client:
+        return []
 
-    if template_type == "estimate" and TEMPLATE_PATH and os.path.exists(TEMPLATE_PATH):
-        return TEMPLATE_PATH
+    entries = client.storage.from_(SUPABASE_TEMPLATE_BUCKET).list(
+        template_type,
+        {
+            "limit": 100,
+            "offset": 0,
+            "sortBy": {"column": "name", "order": "desc"},
+        },
+    ) or []
+
+    normalized = []
+    for entry in entries:
+        file_name = entry.get("name")
+        if not file_name:
+            continue
+        metadata = entry.get("metadata") or {}
+        normalized.append(
+            {
+                "objectPath": f"{template_type}/{file_name}",
+                "fileName": file_name,
+                "savedAt": entry.get("updated_at") or entry.get("created_at"),
+                "size": metadata.get("size") or entry.get("size") or 0,
+            }
+        )
+
+    normalized.sort(key=lambda item: item.get("savedAt") or "", reverse=True)
+    return normalized
+
+
+def get_template_info(template_type):
+    if SUPABASE_ENABLED:
+        entries = get_supabase_template_entries(template_type)
+        if entries:
+            return entries[0]
+
+    path = get_local_template_path(template_type)
+    if path and os.path.exists(path):
+        stat = os.stat(path)
+        return {
+            "objectPath": path,
+            "fileName": os.path.basename(path).split("__", 1)[-1],
+            "savedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "size": stat.st_size,
+        }
 
     return None
 
 
+def read_template_bytes(template_type):
+    info = get_template_info(template_type)
+    if info:
+        if SUPABASE_ENABLED and info["objectPath"].startswith(f"{template_type}/"):
+            content = get_supabase_client().storage.from_(SUPABASE_TEMPLATE_BUCKET).download(info["objectPath"])
+            return info["fileName"], content
+
+        with open(info["objectPath"], "rb") as file_obj:
+            return info["fileName"], file_obj.read()
+
+    if template_type == "estimate" and TEMPLATE_PATH and os.path.exists(TEMPLATE_PATH):
+        with open(TEMPLATE_PATH, "rb") as file_obj:
+            return os.path.basename(TEMPLATE_PATH), file_obj.read()
+
+    return None, None
+
+
 def list_templates():
-    """서식 목록 반환"""
-    ensure_templates_dir()
     result = {}
     for template_type, label in ALLOWED_TEMPLATE_TYPES.items():
-        path = get_uploaded_template_path(template_type)
-        if path and os.path.exists(path):
-            stat = os.stat(path)
+        info = get_template_info(template_type)
+        if info:
             result[template_type] = {
                 "label": label,
                 "uploaded": True,
-                "fileName": os.path.basename(path).split("__", 1)[-1],
-                "savedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "size": stat.st_size,
+                "fileName": info["fileName"],
+                "savedAt": info["savedAt"],
+                "size": info["size"],
             }
         else:
             result[template_type] = {
@@ -104,39 +297,68 @@ def list_templates():
     return result
 
 
-def save_template_file(template_type, file_name, content_base64):
-    """서식 파일 저장"""
-    if template_type not in ALLOWED_TEMPLATE_TYPES:
-        raise ValueError("invalid template type")
-
-    ensure_templates_dir()
+def save_template_file_local(template_type, file_name, content):
+    ensure_local_dirs()
     safe_name = sanitize_filename(file_name)
-    content = base64.b64decode(content_base64.encode("utf-8"), validate=True)
-
-    existing = get_uploaded_template_path(template_type)
+    existing = get_local_template_path(template_type)
     if existing and os.path.exists(existing):
         os.remove(existing)
 
-    target_name = f"{template_type}__{safe_name}"
-    target_path = os.path.join(TEMPLATES_DIR, target_name)
-    with open(target_path, "wb") as f:
-        f.write(content)
-
+    target_path = os.path.join(TEMPLATES_DIR, f"{template_type}__{safe_name}")
+    with open(target_path, "wb") as file_obj:
+        file_obj.write(content)
     return target_path
 
 
+def save_template_file_supabase(template_type, file_name, content):
+    client = get_supabase_client()
+    safe_name = sanitize_filename(file_name)
+    current_entries = get_supabase_template_entries(template_type)
+    if current_entries:
+        client.storage.from_(SUPABASE_TEMPLATE_BUCKET).remove([entry["objectPath"] for entry in current_entries])
+
+    object_path = f"{template_type}/{safe_name}"
+    mime_type = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+    client.storage.from_(SUPABASE_TEMPLATE_BUCKET).upload(
+        path=object_path,
+        file=content,
+        file_options={
+            "content-type": mime_type,
+            "upsert": "true",
+        },
+    )
+    return object_path
+
+
+def save_template_file(template_type, file_name, content_base64):
+    if template_type not in ALLOWED_TEMPLATE_TYPES:
+        raise ValueError("invalid template type")
+
+    content = base64.b64decode(content_base64.encode("utf-8"), validate=True)
+    if SUPABASE_ENABLED:
+        return save_template_file_supabase(template_type, file_name, content)
+    return save_template_file_local(template_type, file_name, content)
+
+
 def delete_template_file(template_type):
-    """서식 파일 삭제"""
-    path = get_uploaded_template_path(template_type)
+    deleted = False
+
+    if SUPABASE_ENABLED:
+        entries = get_supabase_template_entries(template_type)
+        if entries:
+            get_supabase_client().storage.from_(SUPABASE_TEMPLATE_BUCKET).remove([entry["objectPath"] for entry in entries])
+            deleted = True
+
+    path = get_local_template_path(template_type)
     if path and os.path.exists(path):
         os.remove(path)
-        return True
-    return False
+        deleted = True
+
+    return deleted
 
 
-def init_db():
-    """로컬 SQLite DB 초기화"""
-    os.makedirs(DATA_ROOT, exist_ok=True)
+def init_db_local():
+    ensure_local_dirs()
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.execute(
@@ -153,22 +375,25 @@ def init_db():
         conn.close()
 
 
-def save_app_data(data):
-    """앱 전체 데이터를 스냅샷으로 저장"""
-    payload = json.dumps(data, ensure_ascii=False)
+def save_app_data_local(data):
+    payload = json.dumps(normalize_app_data(data), ensure_ascii=False)
+    saved_at = now_iso()
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.execute(
             "INSERT INTO app_snapshots (saved_at, data_json) VALUES (?, ?)",
-            (datetime.now().isoformat(), payload),
+            (saved_at, payload),
         )
         conn.commit()
     finally:
         conn.close()
+    return saved_at
 
 
-def load_latest_app_data():
-    """가장 최근 앱 데이터 스냅샷 로드"""
+def load_latest_app_data_local():
+    if not os.path.exists(DB_PATH):
+        return {"data": dict(DEFAULT_APP_DATA), "savedAt": None}
+
     conn = sqlite3.connect(DB_PATH)
     try:
         row = conn.execute(
@@ -178,337 +403,349 @@ def load_latest_app_data():
         conn.close()
 
     if not row:
-        return {
-            "data": {
-                "customers": [],
-                "items": [],
-                "transactions": {},
-                "payments": {},
-            },
-            "savedAt": None,
-        }
+        return {"data": dict(DEFAULT_APP_DATA), "savedAt": None}
 
     try:
         data = json.loads(row[0]) if row[0] else {}
     except Exception:
         data = {}
 
+    return {"data": normalize_app_data(data), "savedAt": row[1]}
+
+
+def save_app_data_supabase(data):
+    client = get_supabase_client()
+    saved_at = now_iso()
+    payload = {
+        "id": SUPABASE_STATE_ROW_ID,
+        "data_json": normalize_app_data(data),
+        "updated_at": saved_at,
+    }
+    client.table(SUPABASE_STATE_TABLE).upsert(payload, on_conflict="id").execute()
+    return saved_at
+
+
+def load_latest_app_data_supabase():
+    client = get_supabase_client()
+    response = (
+        client.table(SUPABASE_STATE_TABLE)
+        .select("id, data_json, updated_at")
+        .eq("id", SUPABASE_STATE_ROW_ID)
+        .maybe_single()
+        .execute()
+    )
+
+    row = response.data or None
+    if not row:
+        return {"data": dict(DEFAULT_APP_DATA), "savedAt": None}
+
+    data = row.get("data_json")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except Exception:
+            data = {}
+
     return {
-        "data": data,
-        "savedAt": row[1],
+        "data": normalize_app_data(data),
+        "savedAt": row.get("updated_at"),
     }
 
-def copy_cell_style(source_cell, target_cell):
-    """셀 스타일 복사"""
-    try:
-        if source_cell.font:
-            target_cell.font = copy(source_cell.font)
-        if source_cell.border:
-            target_cell.border = copy(source_cell.border)
-        if source_cell.fill:
-            target_cell.fill = copy(source_cell.fill)
-        if source_cell.number_format:
-            target_cell.number_format = copy(source_cell.number_format)
-        if source_cell.protection:
-            target_cell.protection = copy(source_cell.protection)
-        if source_cell.alignment:
-            target_cell.alignment = copy(source_cell.alignment)
-    except:
-        pass
 
-def replace_variables(ws, data):
-    """워크시트의 변수 치환"""
-    replacements = {
-        '{납품월}': data.get('deliveryMonth', ''),
-        '{거래처명}': data.get('customer', ''),
-        '{공사명}': data.get('projectName', ''),
-    }
-    
-    # 셀 값 중에 변수가 있으면 치환
-    for row in ws.iter_rows():
-        for cell in row:
-            if cell.value and isinstance(cell.value, str):
-                for placeholder, value in replacements.items():
-                    if placeholder in cell.value:
-                        cell.value = cell.value.replace(placeholder, str(value))
-    
-    # 품목 데이터 입력 (행 9부터 시작)
-    items = data.get('items', [])
-    start_row = 9
-    template_row = 9
-    
-    for idx, item in enumerate(items[:20]):
-        row_num = start_row + idx
-        
-        # 템플릿 행에서 스타일 복사
-        for col_letter in ['A', 'B', 'C', 'D', 'E', 'F', 'G']:
-            source_cell = ws[f'{col_letter}{template_row}']
-            target_cell = ws[f'{col_letter}{row_num}']
-            copy_cell_style(source_cell, target_cell)
-        
-        # 데이터 입력
-        ws[f'A{row_num}'].value = item.get('product', '')
-        ws[f'B{row_num}'].value = item.get('spec', '')
-        ws[f'C{row_num}'].value = float(item.get('quantity', 0) or 0)
-        ws[f'D{row_num}'].value = item.get('unit', '')
-        ws[f'E{row_num}'].value = float(item.get('unitPrice', 0) or 0)
-        
-        quantity = float(item.get('quantity', 0) or 0)
-        unit_price = float(item.get('unitPrice', 0) or 0)
-        amount = quantity * unit_price
-        ws[f'F{row_num}'].value = amount
-        ws[f'G{row_num}'].value = item.get('remark', '')
+def save_app_data(data):
+    if SUPABASE_ENABLED:
+        return save_app_data_supabase(data)
+    return save_app_data_local(data)
+
+
+def load_latest_app_data():
+    if SUPABASE_ENABLED:
+        return load_latest_app_data_supabase()
+    return load_latest_app_data_local()
+
+
+def seed_supabase_from_local():
+    if not SUPABASE_ENABLED:
+        return
+
+    remote_state = load_latest_app_data_supabase()
+    local_state = load_latest_app_data_local()
+    if not remote_state["savedAt"] and local_state["savedAt"]:
+        save_app_data_supabase(local_state["data"])
+
+    for template_type in ALLOWED_TEMPLATE_TYPES:
+        remote_info = get_template_info(template_type)
+        local_path = get_local_template_path(template_type)
+        if remote_info and remote_info["objectPath"].startswith(f"{template_type}/"):
+            continue
+        if local_path and os.path.exists(local_path):
+            with open(local_path, "rb") as file_obj:
+                save_template_file_supabase(
+                    template_type,
+                    os.path.basename(local_path).split("__", 1)[-1],
+                    file_obj.read(),
+                )
+
 
 def generate_estimate(data):
-    """견적서 Excel 생성"""
     return generate_document(data, "estimate")
 
 
 def generate_document(data, doc_type):
-    """문서 타입별 Excel 생성"""
     try:
         if doc_type not in ALLOWED_TEMPLATE_TYPES:
             raise ValueError("지원하지 않는 문서 타입입니다.")
 
-        template_path = resolve_template_path(doc_type)
-        if not template_path:
-            raise FileNotFoundError(f"{ALLOWED_TEMPLATE_TYPES[doc_type]} 템플릿이 없습니다. 서식업로드에서 먼저 업로드해주세요.")
+        template_name, template_bytes = read_template_bytes(doc_type)
+        if not template_bytes:
+            raise FileNotFoundError(
+                f"{ALLOWED_TEMPLATE_TYPES[doc_type]} 템플릿이 없습니다. 서식업로드에서 먼저 업로드해주세요."
+            )
 
-        wb = load_workbook(template_path)
+        wb = load_workbook(BytesIO(template_bytes))
         ws = wb.active
-        
         replace_variables(ws, data)
-        
-        # 견적서 템플릿의 합계 셀을 유지하기 위해 기존 규칙 적용
+
         if doc_type == "estimate":
-            total = sum(float(ws[f'F{row}'].value or 0) for row in range(9, 29))
-            ws['F11'].value = total
-        
-        # 메모리에 저장
+            total = sum(float(ws[f"F{row}"].value or 0) for row in range(9, 29))
+            ws["F11"].value = total
+
         output = BytesIO()
         wb.save(output)
         output.seek(0)
-        
-        # 디스크에도 저장 (자동 열기용)
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+        ensure_local_dirs()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        customer_name = data.get('customer', 'estimate').replace('/', '_')
+        customer_name = data.get("customer", "estimate").replace("/", "_")
         doc_label = ALLOWED_TEMPLATE_TYPES.get(doc_type, doc_type)
         filename = f"{customer_name}_{doc_label}_{timestamp}.xlsx"
         filepath = os.path.join(OUTPUT_DIR, filename)
-        
-        with open(filepath, 'wb') as f:
-            f.write(output.getvalue())
-        
+
+        with open(filepath, "wb") as file_obj:
+            file_obj.write(output.getvalue())
+
         return output.getvalue(), filename, filepath
-        
-    except Exception as e:
-        print(f"Error: {e}")
+    except Exception as error:
+        print(f"Error: {error}")
         import traceback
+
         traceback.print_exc()
         return None, None, None
 
+
 def open_file(filepath):
-    """파일 자동 실행"""
     try:
-        # Cloud environments should not attempt opening desktop applications.
-        if os.environ.get('RENDER') or os.environ.get('DISABLE_AUTO_OPEN') == '1':
+        if os.environ.get("RENDER") or os.environ.get("DISABLE_AUTO_OPEN") == "1":
             return
-        if platform.system() == 'Darwin':
-            subprocess.Popen(['open', filepath])
-        elif platform.system() == 'Windows':
+        if platform.system() == "Darwin":
+            subprocess.Popen(["open", filepath])
+        elif platform.system() == "Windows":
             os.startfile(filepath)
-        elif platform.system() == 'Linux':
-            subprocess.Popen(['xdg-open', filepath])
-    except Exception as e:
-        print(f"Warning: {e}")
+        elif platform.system() == "Linux":
+            subprocess.Popen(["xdg-open", filepath])
+    except Exception as error:
+        print(f"Warning: {error}")
+
 
 class EstimateHandler(BaseHTTPRequestHandler):
     def _send_json(self, status_code, body):
         self.send_response(status_code)
-        self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
-        self.wfile.write(json.dumps(body, ensure_ascii=False).encode('utf-8'))
+        self.wfile.write(json.dumps(body, ensure_ascii=False).encode("utf-8"))
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
     def do_GET(self):
-        if self.path == '/api/templates':
-            self._send_json(200, {"templates": list_templates()})
-            return
-
-        if self.path.startswith('/api/templates/') and self.path.endswith('/download'):
-            parts = self.path.split('/')
-            if len(parts) >= 5:
-                template_type = parts[3]
-                if template_type not in ALLOWED_TEMPLATE_TYPES:
-                    self._send_json(404, {"error": "template type not found"})
-                    return
-
-                template_path = get_uploaded_template_path(template_type)
-                if not template_path:
-                    self._send_json(404, {"error": "template file not found"})
-                    return
-
-                filename = os.path.basename(template_path).split("__", 1)[-1]
-                with open(template_path, 'rb') as f:
-                    file_bytes = f.read()
-
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/octet-stream')
-                self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(file_bytes)
+        try:
+            if self.path == "/api/templates":
+                self._send_json(200, {"templates": list_templates()})
                 return
 
-        if self.path == '/api/data':
-            snapshot = load_latest_app_data()
-            self._send_json(200, snapshot)
-            return
+            if self.path.startswith("/api/templates/") and self.path.endswith("/download"):
+                parts = self.path.split("/")
+                if len(parts) >= 5:
+                    template_type = parts[3]
+                    if template_type not in ALLOWED_TEMPLATE_TYPES:
+                        self._send_json(404, {"error": "template type not found"})
+                        return
 
-        if self.path == '/api/health':
-            self._send_json(200, {'ok': True})
-            return
+                    filename, file_bytes = read_template_bytes(template_type)
+                    if not file_bytes:
+                        self._send_json(404, {"error": "template file not found"})
+                        return
 
-        self.send_response(404)
-        self.end_headers()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(file_bytes)
+                    return
+
+            if self.path == "/api/data":
+                self._send_json(200, load_latest_app_data())
+                return
+
+            if self.path == "/api/health":
+                self._send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "storage": "supabase" if SUPABASE_ENABLED else "local",
+                        "supabaseConfigured": SUPABASE_ENABLED,
+                    },
+                )
+                return
+
+            self.send_response(404)
+            self.end_headers()
+        except Exception as error:
+            self._send_json(500, {"ok": False, "error": str(error)})
 
     def do_POST(self):
-        if self.path == '/api/templates':
-            content_length = int(self.headers.get('Content-Length', 0))
+        if self.path == "/api/templates":
+            content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)
             try:
-                payload = json.loads(body.decode('utf-8'))
-                template_type = payload.get('templateType')
-                file_name = payload.get('fileName')
-                content_base64 = payload.get('contentBase64')
+                payload = json.loads(body.decode("utf-8"))
+                template_type = payload.get("templateType")
+                file_name = payload.get("fileName")
+                content_base64 = payload.get("contentBase64")
 
                 if not template_type or not file_name or not content_base64:
-                    raise ValueError('templateType, fileName, contentBase64 are required')
+                    raise ValueError("templateType, fileName, contentBase64 are required")
 
                 save_template_file(template_type, file_name, content_base64)
-                self._send_json(200, {'ok': True, 'templates': list_templates()})
-            except Exception as e:
-                self._send_json(400, {'ok': False, 'error': str(e)})
+                self._send_json(200, {"ok": True, "templates": list_templates()})
+            except Exception as error:
+                self._send_json(400, {"ok": False, "error": str(error)})
             return
 
-        if self.path == '/api/data':
-            content_length = int(self.headers.get('Content-Length', 0))
+        if self.path == "/api/data":
+            content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)
 
             try:
-                data = json.loads(body.decode('utf-8'))
+                data = json.loads(body.decode("utf-8"))
                 if not isinstance(data, dict):
-                    raise ValueError('data must be an object')
+                    raise ValueError("data must be an object")
 
-                save_app_data(data)
-                self._send_json(200, {'ok': True, 'savedAt': datetime.now().isoformat()})
-            except Exception as e:
-                self._send_json(400, {'ok': False, 'error': str(e)})
+                saved_at = save_app_data(data)
+                self._send_json(200, {"ok": True, "savedAt": saved_at})
+            except Exception as error:
+                self._send_json(400, {"ok": False, "error": str(error)})
             return
 
-        if self.path == '/estimate':
-            content_length = int(self.headers.get('Content-Length', 0))
+        if self.path == "/estimate":
+            content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)
-            
+
             try:
-                data = json.loads(body.decode('utf-8'))
+                data = json.loads(body.decode("utf-8"))
                 file_data, filename, filepath = generate_estimate(data)
-                
+
                 if file_data:
-                    # 자동으로 파일 열기
                     threading.Thread(target=open_file, args=(filepath,), daemon=True).start()
-                    
-                    # 파일 바이너리 반환
                     self.send_response(200)
-                    self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-                    self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
-                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                    self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(file_data)
                 else:
-                    self._send_json(500, {'error': '파일 생성 실패'})
-                    
-            except Exception as e:
-                print(f"Error: {e}")
-                self._send_json(500, {'error': str(e)})
+                    self._send_json(500, {"error": "파일 생성 실패"})
+            except Exception as error:
+                print(f"Error: {error}")
+                self._send_json(500, {"error": str(error)})
             return
 
-        if self.path == '/document':
-            content_length = int(self.headers.get('Content-Length', 0))
+        if self.path == "/document":
+            content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)
 
             try:
-                payload = json.loads(body.decode('utf-8'))
-                doc_type = payload.get('docType')
-                data = payload.get('data')
+                payload = json.loads(body.decode("utf-8"))
+                doc_type = payload.get("docType")
+                data = payload.get("data")
 
                 if not doc_type or not isinstance(data, dict):
-                    raise ValueError('docType, data are required')
+                    raise ValueError("docType, data are required")
 
                 file_data, filename, filepath = generate_document(data, doc_type)
 
                 if file_data:
                     threading.Thread(target=open_file, args=(filepath,), daemon=True).start()
-
                     self.send_response(200)
-                    self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-                    self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
-                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                    self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(file_data)
                 else:
-                    self._send_json(500, {'error': '파일 생성 실패'})
-            except Exception as e:
-                print(f"Error: {e}")
-                self._send_json(500, {'error': str(e)})
+                    self._send_json(500, {"error": "파일 생성 실패"})
+            except Exception as error:
+                print(f"Error: {error}")
+                self._send_json(500, {"error": str(error)})
             return
-        else:
-            self.send_response(404)
-            self.end_headers()
+
+        self.send_response(404)
+        self.end_headers()
 
     def do_DELETE(self):
-        if self.path.startswith('/api/templates/'):
-            parts = self.path.split('/')
+        if self.path.startswith("/api/templates/"):
+            parts = self.path.split("/")
             if len(parts) >= 4:
                 template_type = parts[3]
                 if template_type not in ALLOWED_TEMPLATE_TYPES:
-                    self._send_json(404, {'ok': False, 'error': 'template type not found'})
+                    self._send_json(404, {"ok": False, "error": "template type not found"})
                     return
-                deleted = delete_template_file(template_type)
-                self._send_json(200, {'ok': True, 'deleted': deleted, 'templates': list_templates()})
+                try:
+                    deleted = delete_template_file(template_type)
+                    self._send_json(200, {"ok": True, "deleted": deleted, "templates": list_templates()})
+                except Exception as error:
+                    self._send_json(400, {"ok": False, "error": str(error)})
                 return
 
         self.send_response(404)
         self.end_headers()
-    
+
     def log_message(self, format, *args):
-        """로그 출력 억제"""
         pass
 
-def run_server(port=5050, host='0.0.0.0'):
-    """HTTP 서버 실행"""
-    init_db()
-    ensure_templates_dir()
+
+def initialize_storage():
+    ensure_local_dirs()
+    init_db_local()
+
+    if SUPABASE_ENABLED:
+        ensure_supabase_bucket()
+        verify_supabase_table()
+        seed_supabase_from_local()
+
+
+def run_server(port=5050, host="0.0.0.0"):
+    initialize_storage()
     server = HTTPServer((host, port), EstimateHandler)
-    print(f"견적서 서버 시작: http://{host}:{port}")
+    storage_label = "Supabase" if SUPABASE_ENABLED else "Local"
+    print(f"견적서 서버 시작: http://{host}:{port} ({storage_label})")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("서버 종료")
         server.shutdown()
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', '5050'))
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "5050"))
     if len(sys.argv) > 1:
         try:
             port = int(sys.argv[1])

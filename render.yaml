@@ -5,12 +5,18 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python estimate_server.py
-    disk:
-      name: tk-system-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
-      - key: DATA_ROOT
-        value: /var/data/tk_system_data
+      - key: OUTPUT_DIR
+        value: /tmp/tk_system_output
       - key: DISABLE_AUTO_OPEN
         value: "1"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STATE_TABLE
+        value: tk_app_state
+      - key: SUPABASE_STATE_ROW_ID
+        value: primary
+      - key: SUPABASE_TEMPLATE_BUCKET
+        value: tk-templates

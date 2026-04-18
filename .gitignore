@@ -11,3 +11,6 @@ tk_system.db
 
 # Local uploaded templates cache
 templates/
+
+# Local environment files
+.env
