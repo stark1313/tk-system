@@ -97,6 +97,32 @@
     .product-suggestions li:hover {
       background: #f8f9fa;
     }
+    .spec-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 0.25rem;
+      max-height: 220px;
+      overflow-y: auto;
+      display: none;
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .spec-suggestions.show {
+      display: block;
+    }
+    .spec-suggestions li {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+    }
+    .spec-suggestions li:hover {
+      background: #f8f9fa;
+    }
     .items-header {
       display: flex;
       justify-content: space-between;
@@ -493,11 +519,13 @@
         row.innerHTML = `
           <td><button type="button" class="minus-btn" data-action="remove">-</button></td>
           <td style="position: relative;">
-          <td style="position: relative;">
             <input type="text" class="form-control item-product" value="${data.product || ''}" ${editMode ? '' : 'disabled'} placeholder="품목" autocomplete="off">
             <ul class="product-suggestions list-group"></ul>
           </td>
-          <td><input type="text" class="form-control item-spec" value="${data.spec || ''}" ${editMode ? '' : 'disabled'}></td>
+          <td style="position: relative;">
+            <input type="text" class="form-control item-spec" value="${data.spec || ''}" ${editMode ? '' : 'disabled'} autocomplete="off">
+            <ul class="spec-suggestions list-group"></ul>
+          </td>
           <td><input type="text" class="form-control item-unit" value="${data.unit || ''}" ${editMode ? '' : 'disabled'}></td>
           <td><input type="number" class="form-control item-quantity" value="${data.quantity || 0}" min="0" ${editMode ? '' : 'disabled'}></td>
           <td><input type="text" class="form-control item-unit-price" value="${data.unitPrice ? formatNumber(data.unitPrice) : ''}" ${editMode ? '' : 'disabled'} placeholder="0"></td>
@@ -516,7 +544,28 @@
         // 품목 드롭다운 기능 - 주문관리와 동일한 로직
         const productInput = row.querySelector('.item-product');
         const productSuggestions = row.querySelector('.product-suggestions');
-        const items = JSON.parse(localStorage.getItem('items') || '[]');
+        const specInput = row.querySelector('.item-spec');
+        const specSuggestions = row.querySelector('.spec-suggestions');
+        const itemMaster = JSON.parse(localStorage.getItem('items') || '[]');
+
+        function findItemsByProductName(name) {
+          const productName = String(name || '').trim();
+          if (!productName) return [];
+          return itemMaster.filter(item => String(item.name || '').trim() === productName);
+        }
+
+        function applyItemBySpec(productName, spec) {
+          const matched = itemMaster.find(item => {
+            const sameName = String(item.name || '').trim() === String(productName || '').trim();
+            const sameSpec = String(item.spec || '').trim() === String(spec || '').trim();
+            return sameName && sameSpec;
+          });
+          if (!matched) return;
+          row.querySelector('.item-unit').value = matched.unit || '';
+          row.querySelector('.item-unit-price').value = matched.unitPrice ? formatNumber(matched.unitPrice) : '';
+          row.querySelector('.item-remark').value = matched.remark || '';
+          calculateRow(row);
+        }
 
         function showProductSuggestions(value) {
           if (!value) {
@@ -526,16 +575,18 @@
           }
 
           const keyword = value.trim();
-          const matched = items.filter(item =>
-            item.name.includes(keyword) || getChosung(item.name).includes(keyword)
-          );
+          const matchedNames = Array.from(new Set(
+            itemMaster
+              .map(item => String(item.name || '').trim())
+              .filter(name => name && (name.includes(keyword) || getChosung(name).includes(keyword)))
+          ));
 
-          productSuggestions.innerHTML = matched.slice(0, 6).map(item => `
-            <li class="list-group-item list-group-item-action suggestion-item" role="option" data-name="${item.name}" data-spec="${item.spec}" data-unit="${item.unit}" data-price="${item.unitPrice}" data-remark="${item.remark || ''}">
-              <strong>${item.name}</strong> <small style="color: #666;">- ${item.spec} (${item.unit})</small>
+          productSuggestions.innerHTML = matchedNames.slice(0, 6).map(name => `
+            <li class="list-group-item list-group-item-action suggestion-item" role="option" data-name="${name}">
+              <strong>${name}</strong>
             </li>
           `).join('');
-          productSuggestions.classList.toggle('show', matched.length > 0);
+          productSuggestions.classList.toggle('show', matchedNames.length > 0);
         }
 
         function clearProductSuggestions() {
@@ -543,27 +594,88 @@
           productSuggestions.classList.remove('show');
         }
 
+        function showSpecSuggestions(value) {
+          const productName = productInput.value.trim();
+          if (!productName) {
+            specSuggestions.innerHTML = '';
+            specSuggestions.classList.remove('show');
+            return;
+          }
+
+          const keyword = String(value || '').trim();
+          const specs = Array.from(new Set(
+            findItemsByProductName(productName)
+              .map(item => String(item.spec || '').trim())
+              .filter(spec => spec && (!keyword || spec.includes(keyword)))
+          ));
+
+          specSuggestions.innerHTML = specs.slice(0, 8).map(spec => `
+            <li class="list-group-item list-group-item-action spec-suggestion-item" data-spec="${spec}">${spec}</li>
+          `).join('');
+          specSuggestions.classList.toggle('show', specs.length > 0);
+        }
+
+        function clearSpecSuggestions() {
+          specSuggestions.innerHTML = '';
+          specSuggestions.classList.remove('show');
+        }
+
+        function applyDefaultFromProduct(productName) {
+          const matchedItems = findItemsByProductName(productName);
+          if (matchedItems.length === 1) {
+            const matched = matchedItems[0];
+            specInput.value = matched.spec || '';
+            row.querySelector('.item-unit').value = matched.unit || '';
+            row.querySelector('.item-unit-price').value = matched.unitPrice ? formatNumber(matched.unitPrice) : '';
+            row.querySelector('.item-remark').value = matched.remark || '';
+            calculateRow(row);
+          } else {
+            specInput.value = '';
+            row.querySelector('.item-unit').value = '';
+            row.querySelector('.item-unit-price').value = '';
+          }
+        }
+
         productInput.addEventListener('input', () => {
           if (!editMode) return;
           showProductSuggestions(productInput.value);
+          showSpecSuggestions('');
         });
 
         productSuggestions.addEventListener('click', e => {
           const item = e.target.closest('.suggestion-item');
           if (!item) return;
           productInput.value = item.dataset.name;
-          row.querySelector('.item-spec').value = item.dataset.spec;
-          row.querySelector('.item-unit').value = item.dataset.unit;
-          row.querySelector('.item-unit-price').value = item.dataset.price ? formatNumber(item.dataset.price) : '';
-          row.querySelector('.item-remark').value = item.dataset.remark;
+          applyDefaultFromProduct(item.dataset.name);
+          showSpecSuggestions('');
           clearProductSuggestions();
-          calculateRow(row);
+        });
+
+        specInput.addEventListener('input', () => {
+          if (!editMode) return;
+          showSpecSuggestions(specInput.value);
+        });
+
+        specInput.addEventListener('focus', () => {
+          if (!editMode) return;
+          showSpecSuggestions(specInput.value);
+        });
+
+        specSuggestions.addEventListener('click', e => {
+          const item = e.target.closest('.spec-suggestion-item');
+          if (!item) return;
+          specInput.value = item.dataset.spec;
+          clearSpecSuggestions();
+          applyItemBySpec(productInput.value, item.dataset.spec);
         });
 
         // 외부 클릭 시 드롭다운 닫기
         document.addEventListener('click', (e) => {
           if (!e.target.closest('.item-product') && !e.target.closest('.product-suggestions')) {
             clearProductSuggestions();
+          }
+          if (!e.target.closest('.item-spec') && !e.target.closest('.spec-suggestions')) {
+            clearSpecSuggestions();
           }
         });
 

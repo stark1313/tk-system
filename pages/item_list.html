@@ -224,7 +224,8 @@
           </div>
           <div class="search-field">
             <label for="item-search-spec">규격</label>
-            <input type="text" id="item-search-spec" placeholder="규격 검색">
+            <input type="text" id="item-search-spec" list="item-spec-options" placeholder="규격 검색">
+            <datalist id="item-spec-options"></datalist>
           </div>
           <div class="search-field">
             <label for="item-search-remark">비고</label>
@@ -313,6 +314,7 @@
     const itemSearchRemarkInput = document.getElementById('item-search-remark');
     const itemSearchResetBtn = document.getElementById('item-search-reset');
     const itemNameOptions = document.getElementById('item-name-options');
+    const itemSpecOptions = document.getElementById('item-spec-options');
     const itemPaginationInfo = document.getElementById('item-pagination-info');
     const itemPaginationControls = document.getElementById('item-pagination-controls');
     const saveConfirmModal = new bootstrap.Modal(document.getElementById('saveConfirmModal'));
@@ -335,6 +337,7 @@
       }
       addItemBtn.disabled = true;
       updateNameSuggestions();
+      updateSpecSuggestions();
       renderItems();
     }
 
@@ -406,6 +409,17 @@
       itemNameOptions.innerHTML = uniqueNames.map((name) => `<option value="${name}"></option>`).join('');
     }
 
+    function updateSpecSuggestions() {
+      const nameKeyword = normalizeText(itemSearchNameInput.value);
+      const specs = Array.from(new Set(
+        items
+          .filter((item) => !nameKeyword || normalizeText(item.name).includes(nameKeyword))
+          .map((item) => String(item.spec || '').trim())
+          .filter(Boolean)
+      )).sort((a, b) => a.localeCompare(b, 'ko'));
+      itemSpecOptions.innerHTML = specs.map((spec) => `<option value="${spec}"></option>`).join('');
+    }
+
     function renderItems() {
       filteredIndexes = getFilteredIndexes();
       const { totalPages, start, end } = getPaginationState(filteredIndexes.length);
@@ -450,6 +464,7 @@
           const index = parseInt(e.target.dataset.index);
           items.splice(index, 1);
           updateNameSuggestions();
+          updateSpecSuggestions();
           renderItems();
         });
       });
@@ -459,6 +474,7 @@
           const index = parseInt(e.target.dataset.index, 10);
           items[index].name = e.target.value;
           updateNameSuggestions();
+          updateSpecSuggestions();
         });
       });
 
@@ -466,6 +482,7 @@
         input.addEventListener('input', (e) => {
           const index = parseInt(e.target.dataset.index, 10);
           items[index].spec = e.target.value;
+          updateSpecSuggestions();
         });
       });
 
@@ -506,6 +523,7 @@
       saveBtn.style.display = 'none';
       addItemBtn.disabled = true;
       updateNameSuggestions();
+      updateSpecSuggestions();
       renderItems();
       saveModal.show();
     }
@@ -532,7 +550,12 @@
       });
       currentPage = Math.max(1, Math.ceil(items.length / itemsPerPage));
       updateNameSuggestions();
+      updateSpecSuggestions();
       renderItems();
+    });
+
+    itemSearchNameInput.addEventListener('input', () => {
+      updateSpecSuggestions();
     });
 
     itemSearchForm.addEventListener('submit', (e) => {
