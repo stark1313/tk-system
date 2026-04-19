@@ -339,6 +339,26 @@
     });
 
     addCustomerBtn.addEventListener('click', () => {
+      // 현재 입력 중인 데이터를 먼저 저장
+      const updatedCustomers = [];
+      tableBody.querySelectorAll('tr').forEach(row => {
+        const nameInput = row.querySelector('.customer-name');
+        if (nameInput) {
+          updatedCustomers.push({
+            name: nameInput.value,
+            representative: row.querySelector('.customer-representative').value,
+            bizNum: row.querySelector('.customer-biznum').value,
+            industryType: row.querySelector('.customer-industrytype').value,
+            businessType: row.querySelector('.customer-businesstype').value,
+            phone: row.querySelector('.customer-phone').value,
+            fax: row.querySelector('.customer-fax').value,
+            address: row.querySelector('.customer-address').value
+          });
+        }
+      });
+      customers = updatedCustomers;
+      
+      // 새 행 추가
       customers.push({
         name: '',
         representative: '',

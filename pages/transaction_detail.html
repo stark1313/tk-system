@@ -471,7 +471,7 @@
         const totalInput = row.querySelector('.item-total');
 
         const quantity = parseFloat(quantityInput.value) || 0;
-        const unitPrice = parseFloat(unitPriceInput.value) || 0;
+        const unitPrice = parseFloat(unitPriceInput.value.toString().replace(/,/g, '')) || 0;
         const supply = quantity * unitPrice;
         const tax = taxTypeInput.value === 'exclude' ? 0 : Math.round(supply * 0.1);
         const total = Math.round(supply + tax);
@@ -493,13 +493,14 @@
         row.innerHTML = `
           <td><button type="button" class="minus-btn" data-action="remove">-</button></td>
           <td style="position: relative;">
+          <td style="position: relative;">
             <input type="text" class="form-control item-product" value="${data.product || ''}" ${editMode ? '' : 'disabled'} placeholder="품목" autocomplete="off">
             <ul class="product-suggestions list-group"></ul>
           </td>
           <td><input type="text" class="form-control item-spec" value="${data.spec || ''}" ${editMode ? '' : 'disabled'}></td>
           <td><input type="text" class="form-control item-unit" value="${data.unit || ''}" ${editMode ? '' : 'disabled'}></td>
           <td><input type="number" class="form-control item-quantity" value="${data.quantity || 0}" min="0" ${editMode ? '' : 'disabled'}></td>
-          <td><input type="number" class="form-control item-unit-price" value="${data.unitPrice || 0}" min="0" ${editMode ? '' : 'disabled'}></td>
+          <td><input type="text" class="form-control item-unit-price" value="${data.unitPrice ? formatNumber(data.unitPrice) : ''}" ${editMode ? '' : 'disabled'} placeholder="0"></td>
           <td><input type="text" class="form-control item-supply-price" value="" disabled></td>
           <td><input type="text" class="form-control item-tax" value="" disabled></td>
           <td><input type="text" class="form-control item-total" value="" disabled></td>
@@ -553,7 +554,7 @@
           productInput.value = item.dataset.name;
           row.querySelector('.item-spec').value = item.dataset.spec;
           row.querySelector('.item-unit').value = item.dataset.unit;
-          row.querySelector('.item-unit-price').value = item.dataset.price;
+          row.querySelector('.item-unit-price').value = item.dataset.price ? formatNumber(item.dataset.price) : '';
           row.querySelector('.item-remark').value = item.dataset.remark;
           clearProductSuggestions();
           calculateRow(row);
@@ -567,7 +568,14 @@
         });
 
         row.querySelectorAll('.item-quantity, .item-unit-price').forEach(input => {
-          input.addEventListener('input', () => calculateRow(row));
+          input.addEventListener('input', () => {
+            if (input.classList.contains('item-unit-price')) {
+              // 단가 필드: 숫자만 허용하고 콤마 포맷
+              const numValue = input.value.replace(/[^0-9]/g, '');
+              input.value = numValue ? formatNumber(parseInt(numValue)) : '';
+            }
+            calculateRow(row);
+          });
         });
 
         calculateRow(row);

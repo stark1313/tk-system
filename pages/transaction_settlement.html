@@ -170,6 +170,25 @@
       flex: 1;
     }
 
+    .settlement-page .search-panel {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .settlement-page .search-controls {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .settlement-page .search-controls button {
+      min-width: 120px;
+    }
+
     .settlement-search-wrapper {
       position: relative;
     }
@@ -266,7 +285,7 @@
     }
   </style>
 </head>
-<body>
+<body class="settlement-page">
   <div class="sidebar">
     <div class="sidebar-brand">
       <a href="../index.html">태경산업 주문관리 시스템</a>
@@ -303,16 +322,26 @@
       </div>
 
       <!-- 검색 폼 -->
-      <div style="background: #f8f9fa; border: 1px solid rgba(0,0,0,0.08); border-radius: 0.75rem; padding: 1rem; margin-bottom: 1.5rem;">
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: flex-end;">
-          <div class="settlement-search-wrapper">
-            <label for="settlementSearchCustomer" class="form-label" style="font-weight: 600; margin-bottom: 0.5rem;">거래처명</label>
-            <input type="text" class="form-control" id="settlementSearchCustomer" placeholder="거래처명 검색... (초성 검색 가능)">
+      <section class="search-panel">
+        <form id="settlement-search-form" class="row g-3 align-items-end">
+          <div class="col-12 col-lg-6 settlement-search-wrapper">
+            <label for="settlementSearchCustomer" class="form-label">거래처명</label>
+            <input type="text" class="form-control" id="settlementSearchCustomer" placeholder="거래처명 검색... (초성 검색 가능)" autocomplete="off">
             <div id="settlementSuggestions"></div>
           </div>
-          <button class="btn btn-secondary" id="settlementSearchReset">초기화</button>
-        </div>
-      </div>
+          <div class="col-12 col-lg-3">
+            <label class="form-label">미수금 필터</label>
+            <div class="form-check" style="min-height: 38px; display: flex; align-items: center;">
+              <input class="form-check-input" type="checkbox" id="settlementOnlyUnpaid">
+              <label class="form-check-label ms-2" for="settlementOnlyUnpaid">미수금 있는 업체만</label>
+            </div>
+          </div>
+          <div class="col-12 search-controls">
+            <button type="button" class="btn btn-outline-secondary" id="settlementSearchReset">초기화</button>
+            <button type="submit" class="btn btn-primary" id="settlementSearchBtn">검색</button>
+          </div>
+        </form>
+      </section>
 
       <div class="settlement-list-table">
         <table class="table table-hover">
@@ -498,6 +527,8 @@
     let currentPage = 1;
     const pageSize = 5;
     let filteredCustomers = [];
+    let settlementSearchCustomer = '';
+    let settlementOnlyUnpaid = false;
     const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
     const paymentConfirmModal = new bootstrap.Modal(document.getElementById('paymentConfirmModal'));
     const paymentSaveModal = new bootstrap.Modal(document.getElementById('paymentSaveModal'));
@@ -747,10 +778,29 @@
         updateCustomerSummary(customerName);
       });
 
-      filteredCustomers = Object.keys(settlementData).sort();
+      applySettlementFilters();
       currentPage = 1;
       renderSettlementList();
       setupSearchListener();
+    }
+
+    function applySettlementFilters() {
+      const allCustomers = Object.keys(settlementData).sort();
+      const keyword = settlementSearchCustomer.trim();
+      const queryUpper = keyword.toUpperCase();
+      const queryChosung = getChosung(keyword).toUpperCase();
+
+      filteredCustomers = allCustomers.filter(name => {
+        const data = settlementData[name];
+        const unpaid = data.totalSale - data.totalPaid;
+        if (settlementOnlyUnpaid && unpaid <= 0) return false;
+
+        if (!keyword) return true;
+
+        const nameUpper = name.toUpperCase();
+        const nameChosung = getChosung(name).toUpperCase();
+        return nameUpper.includes(queryUpper) || nameChosung.includes(queryChosung);
+      });
     }
 
     function renderSettlementList() {
@@ -833,27 +883,20 @@
     }
 
     function setupSearchListener() {
+      const searchForm = document.getElementById('settlement-search-form');
       const searchInput = document.getElementById('settlementSearchCustomer');
       const suggestionsDiv = document.getElementById('settlementSuggestions');
       const resetBtn = document.getElementById('settlementSearchReset');
+      const onlyUnpaidCheckbox = document.getElementById('settlementOnlyUnpaid');
 
       searchInput.addEventListener('input', function() {
         const query = this.value.trim();
+        const allCustomers = Object.keys(settlementData).sort();
+        const queryChosung = getChosung(query).toUpperCase();
         
         if (!query) {
-          filteredCustomers = Object.keys(settlementData).sort();
           suggestionsDiv.style.display = 'none';
         } else {
-          const allCustomers = Object.keys(settlementData).sort();
-          const queryChosung = getChosung(query).toUpperCase();
-          
-          filteredCustomers = allCustomers.filter(name => {
-            const nameUpper = name.toUpperCase();
-            const nameChosung = getChosung(name).toUpperCase();
-            return nameUpper.includes(query.toUpperCase()) || 
-                   nameChosung.includes(queryChosung);
-          });
-
           // 자동완성 제안 표시
           const matches = allCustomers.filter(name => {
             const nameUpper = name.toUpperCase();
@@ -871,7 +914,14 @@
             suggestionsDiv.style.display = 'none';
           }
         }
+      });
 
+      searchForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        settlementSearchCustomer = searchInput.value;
+        settlementOnlyUnpaid = onlyUnpaidCheckbox.checked;
+        suggestionsDiv.style.display = 'none';
+        applySettlementFilters();
         currentPage = 1;
         renderSettlementList();
       });
@@ -891,7 +941,10 @@
       // 초기화 버튼
       resetBtn.addEventListener('click', () => {
         searchInput.value = '';
-        filteredCustomers = Object.keys(settlementData).sort();
+        onlyUnpaidCheckbox.checked = false;
+        settlementSearchCustomer = '';
+        settlementOnlyUnpaid = false;
+        applySettlementFilters();
         currentPage = 1;
         suggestionsDiv.style.display = 'none';
         renderSettlementList();
@@ -902,9 +955,6 @@
       const searchInput = document.getElementById('settlementSearchCustomer');
       searchInput.value = name;
       document.getElementById('settlementSuggestions').style.display = 'none';
-      filteredCustomers = [name];
-      currentPage = 1;
-      renderSettlementList();
     }
 
     function showDetailView(customerName) {

@@ -305,6 +305,23 @@
     });
 
     addItemBtn.addEventListener('click', () => {
+      // 현재 입력 중인 데이터를 먼저 저장
+      const updatedItems = [];
+      tableBody.querySelectorAll('tr').forEach(row => {
+        const nameInput = row.querySelector('.item-name');
+        if (nameInput) {
+          updatedItems.push({
+            name: nameInput.value,
+            spec: row.querySelector('.item-spec').value,
+            unit: row.querySelector('.item-unit').value,
+            unitPrice: parseFloat(row.querySelector('.item-unitprice').value) || 0,
+            remark: row.querySelector('.item-remark').value
+          });
+        }
+      });
+      items = updatedItems;
+      
+      // 새 행 추가
       items.push({
         name: '',
         spec: '',
