@@ -100,41 +100,94 @@ def copy_cell_style(source_cell, target_cell):
 
 
 def replace_variables(ws, data):
+    items = data.get("items", [])
+
+    # 품목 템플릿 행 자동 감지 ({품목명} 플레이스홀더가 있는 행)
+    item_template_row = None
+    item_col_map = {}  # placeholder → column index
+
+    ITEM_PLACEHOLDERS = {
+        "{품목명}": "product",
+        "{규격}": "spec",
+        "{수량}": "quantity",
+        "{단위}": "unit",
+        "{단가}": "unitPrice",
+        "{금액}": "amount",
+        "{공급가액}": "amount",
+        "{비고}": "remark",
+    }
+
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value and isinstance(cell.value, str) and "{품목명}" in cell.value:
+                item_template_row = cell.row
+                break
+        if item_template_row:
+            break
+
+    # 품목 행 컬럼 매핑 구성
+    if item_template_row:
+        for cell in ws[item_template_row]:
+            if cell.value and isinstance(cell.value, str):
+                for ph, field in ITEM_PLACEHOLDERS.items():
+                    if ph in cell.value:
+                        item_col_map[cell.column] = field
+
+    # 품목 데이터 채우기
+    if item_template_row and item_col_map:
+        max_item_rows = 20
+        for idx in range(max_item_rows):
+            row_num = item_template_row + idx
+            item = items[idx] if idx < len(items) else None
+
+            # 첫 행 이후는 스타일 복사
+            if idx > 0:
+                for col_idx in item_col_map:
+                    source_cell = ws.cell(row=item_template_row, column=col_idx)
+                    target_cell = ws.cell(row=row_num, column=col_idx)
+                    copy_cell_style(source_cell, target_cell)
+
+            for col_idx, field in item_col_map.items():
+                target_cell = ws.cell(row=row_num, column=col_idx)
+                if item:
+                    if field == "quantity":
+                        target_cell.value = float(item.get("quantity", 0) or 0)
+                    elif field == "unitPrice":
+                        target_cell.value = float(item.get("unitPrice", 0) or 0)
+                    elif field == "amount":
+                        qty = float(item.get("quantity", 0) or 0)
+                        price = float(item.get("unitPrice", 0) or 0)
+                        target_cell.value = qty * price
+                    else:
+                        target_cell.value = item.get(field, "")
+                else:
+                    target_cell.value = ""
+
+    # 합계 계산
+    total = sum(
+        float(item.get("quantity", 0) or 0) * float(item.get("unitPrice", 0) or 0)
+        for item in items
+    )
+
+    # 나머지 플레이스홀더 치환 (품목 행 제외)
     replacements = {
         "{납품월}": data.get("deliveryMonth", ""),
         "{거래처명}": data.get("customer", ""),
         "{공사명}": data.get("projectName", ""),
+        "{합계}": f"{int(total):,}" if total == int(total) else f"{total:,.0f}",
     }
 
     for row in ws.iter_rows():
         for cell in row:
             if cell.value and isinstance(cell.value, str):
+                # 품목 플레이스홀더가 남은 셀은 빈 문자열로 처리
+                is_item_placeholder = any(ph in cell.value for ph in ITEM_PLACEHOLDERS)
+                if is_item_placeholder:
+                    cell.value = ""
+                    continue
                 for placeholder, value in replacements.items():
                     if placeholder in cell.value:
                         cell.value = cell.value.replace(placeholder, str(value))
-
-    items = data.get("items", [])
-    start_row = 9
-    template_row = 9
-
-    for idx, item in enumerate(items[:20]):
-        row_num = start_row + idx
-
-        for col_letter in ["A", "B", "C", "D", "E", "F", "G"]:
-            source_cell = ws[f"{col_letter}{template_row}"]
-            target_cell = ws[f"{col_letter}{row_num}"]
-            copy_cell_style(source_cell, target_cell)
-
-        quantity = float(item.get("quantity", 0) or 0)
-        unit_price = float(item.get("unitPrice", 0) or 0)
-
-        ws[f"A{row_num}"].value = item.get("product", "")
-        ws[f"B{row_num}"].value = item.get("spec", "")
-        ws[f"C{row_num}"].value = quantity
-        ws[f"D{row_num}"].value = item.get("unit", "")
-        ws[f"E{row_num}"].value = unit_price
-        ws[f"F{row_num}"].value = quantity * unit_price
-        ws[f"G{row_num}"].value = item.get("remark", "")
 
 
 def get_supabase_client():
@@ -506,10 +559,6 @@ def generate_document(data, doc_type):
         wb = load_workbook(BytesIO(template_bytes))
         ws = wb.active
         replace_variables(ws, data)
-
-        if doc_type == "estimate":
-            total = sum(float(ws[f"F{row}"].value or 0) for row in range(9, 29))
-            ws["F11"].value = total
 
         output = BytesIO()
         wb.save(output)
