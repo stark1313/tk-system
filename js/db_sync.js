@@ -82,14 +82,6 @@
     suppressDirtyMark = false;
   }
 
-  function toTimestamp(value) {
-    if (!value) {
-      return 0;
-    }
-    const ms = Date.parse(value);
-    return Number.isFinite(ms) ? ms : 0;
-  }
-
   function stableStringify(value) {
     if (value === null || typeof value !== 'object') {
       return JSON.stringify(value);
@@ -147,8 +139,7 @@
 
       const serverHasData = hasData(serverPayload);
       const localDirtyAt = localStorage.getItem(DIRTY_KEY);
-      const localDirtyTs = toTimestamp(localDirtyAt);
-      const serverSavedTs = toTimestamp(serverSavedAt);
+      const hasLocalDirty = Boolean(localDirtyAt && String(localDirtyAt).trim());
 
       if (!localHasData && serverHasData) {
         applyServerData(serverPayload);
@@ -162,7 +153,7 @@
 
         if (localSig === serverSig) {
           originalRemoveItem(DIRTY_KEY);
-        } else if (localDirtyTs > serverSavedTs) {
+        } else if (hasLocalDirty) {
           await request('POST', localData);
           originalRemoveItem(DIRTY_KEY);
         } else {
