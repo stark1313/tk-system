@@ -10,6 +10,9 @@ if [ -f .env ]; then
 	set +a
 fi
 
+# UTF-8 인코딩 강제 설정
+export PYTHONIOENCODING=utf-8
+
 echo "======================================"
 echo "견적서 생성 서버 시작"
 echo "======================================"

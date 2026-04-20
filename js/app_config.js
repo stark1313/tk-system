@@ -36,6 +36,21 @@
     window.localStorage.setItem('tk_api_base', apiBase);
   }
 
+  // In local development, API must not point to frontend static server (e.g. :3000).
+  if (isLocalHost) {
+    try {
+      const parsed = new URL(apiBase);
+      const localTarget = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+      if (localTarget && parsed.port && parsed.port !== '5050') {
+        apiBase = 'http://localhost:5050';
+        window.localStorage.setItem('tk_api_base', apiBase);
+      }
+    } catch (error) {
+      apiBase = 'http://localhost:5050';
+      window.localStorage.setItem('tk_api_base', apiBase);
+    }
+  }
+
   window.TK_CONFIG = Object.assign(
     {
       API_BASE: apiBase,

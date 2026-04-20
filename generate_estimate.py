@@ -96,8 +96,12 @@ def generate_estimate(data):
         # 파일 저장
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        customer_name = data.get('customer', 'estimate').replace('/', '_')
-        filename = f"{customer_name}_견적서_{timestamp}.xlsx"
+        # 한글 거래처명을 안전하게 처리 (ASCII만 사용)
+        customer_raw = data.get('customer', 'estimate').replace('/', '_')
+        customer_name = "".join(c if c.isascii() else "_" for c in customer_raw).replace("__", "_").strip("_")
+        if not customer_name:
+            customer_name = "estimate"
+        filename = f"{customer_name}_estimate_{timestamp}.xlsx"
         filepath = os.path.join(OUTPUT_DIR, filename)
         
         wb.save(filepath)

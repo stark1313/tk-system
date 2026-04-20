@@ -15,7 +15,7 @@ from copy import copy
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from openpyxl import load_workbook
 
@@ -73,6 +73,45 @@ def normalize_app_data(data):
 def sanitize_filename(filename):
     base = os.path.basename(filename or "template.xlsx")
     return re.sub(r"[^A-Za-z0-9._-]", "_", base)
+
+
+def sanitize_filename_token(value, fallback="-"):
+    token = str(value or "").strip()
+    if not token:
+        return fallback
+    # Keep Korean text but remove path-invalid characters.
+    token = re.sub(r"[\\/:*?\"<>|]", "_", token)
+    token = re.sub(r"\s+", " ", token).strip()
+    return token or fallback
+
+
+def parse_delivery_month(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    for fmt in ("%Y-%m", "%Y-%m-%d", "%Y.%m", "%Y/%m"):
+        try:
+            parsed = datetime.strptime(raw, fmt)
+            return datetime(parsed.year, parsed.month, 1)
+        except ValueError:
+            continue
+    return None
+
+
+def apply_estimate_overrides(ws, data):
+    # A7 must always be the sum of amount rows.
+    ws["A7"].value = "=SUM(F9:F28)"
+
+    # A2 display format: yyyy"년" m"월"
+    delivery_month = parse_delivery_month(data.get("deliveryMonth", ""))
+    if delivery_month:
+        ws["A2"].value = delivery_month
+        ws["A2"].number_format = 'yyyy"년" m"월"'
+
+
+def build_estimate_filename(data):
+    return "estimate.xlsx"
 
 
 def ensure_local_dirs():
@@ -188,6 +227,17 @@ def replace_variables(ws, data):
                 for placeholder, value in replacements.items():
                     if placeholder in cell.value:
                         cell.value = cell.value.replace(placeholder, str(value))
+    
+    # 모든 셀값 정규화 (한글 문자열이 올바르게 처리되도록)
+    import unicodedata
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value and isinstance(cell.value, str):
+                try:
+                    # NFC 정규형으로 정규화
+                    cell.value = unicodedata.normalize('NFC', cell.value)
+                except Exception:
+                    pass
 
 
 def get_supabase_client():
@@ -560,19 +610,27 @@ def generate_document(data, doc_type):
         ws = wb.active
         replace_variables(ws, data)
 
+        if doc_type == "estimate":
+            apply_estimate_overrides(ws, data)
+
         output = BytesIO()
         wb.save(output)
         output.seek(0)
 
         ensure_local_dirs()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        customer_name = data.get("customer", "estimate").replace("/", "_")
-        doc_label = ALLOWED_TEMPLATE_TYPES.get(doc_type, doc_type)
-        filename = f"{customer_name}_{doc_label}_{timestamp}.xlsx"
-        filepath = os.path.join(OUTPUT_DIR, filename)
+        if doc_type == "estimate":
+            filename = build_estimate_filename(data)
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            customer_name = sanitize_filename_token(data.get("customer"), "document")
+            filename = f"{customer_name}_{doc_type}_{timestamp}.xlsx"
 
-        with open(filepath, "wb") as file_obj:
-            file_obj.write(output.getvalue())
+        filepath = None
+        # Optional local save for troubleshooting/manual archive.
+        if os.environ.get("SAVE_GENERATED_LOCAL") == "1":
+            filepath = os.path.join(OUTPUT_DIR, filename)
+            with open(filepath, "wb") as file_obj:
+                file_obj.write(output.getvalue())
 
         return output.getvalue(), filename, filepath
     except Exception as error:
@@ -588,16 +646,23 @@ def open_file(filepath):
         if os.environ.get("RENDER") or os.environ.get("DISABLE_AUTO_OPEN") == "1":
             return
         if platform.system() == "Darwin":
-            subprocess.Popen(["open", filepath])
+            subprocess.Popen(["open", filepath], encoding='utf-8')
         elif platform.system() == "Windows":
             os.startfile(filepath)
         elif platform.system() == "Linux":
-            subprocess.Popen(["xdg-open", filepath])
+            subprocess.Popen(["xdg-open", filepath], encoding='utf-8')
     except Exception as error:
         print(f"Warning: {error}")
 
 
 class EstimateHandler(BaseHTTPRequestHandler):
+    def _set_file_download_headers(self, filename):
+        safe_filename = sanitize_filename(filename or "document.xlsx")
+        self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.send_header("Content-Disposition", f'attachment; filename="{safe_filename}"')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Expose-Headers", "Content-Disposition")
+
     def _serve_static_file(self, relative_path):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         safe_relative = os.path.normpath(relative_path).lstrip("/\\")
@@ -741,11 +806,10 @@ class EstimateHandler(BaseHTTPRequestHandler):
                 file_data, filename, filepath = generate_estimate(data)
 
                 if file_data:
-                    threading.Thread(target=open_file, args=(filepath,), daemon=True).start()
+                    if filepath:
+                        threading.Thread(target=open_file, args=(filepath,), daemon=True).start()
                     self.send_response(200)
-                    self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self._set_file_download_headers(filename)
                     self.end_headers()
                     self.wfile.write(file_data)
                 else:
@@ -770,11 +834,10 @@ class EstimateHandler(BaseHTTPRequestHandler):
                 file_data, filename, filepath = generate_document(data, doc_type)
 
                 if file_data:
-                    threading.Thread(target=open_file, args=(filepath,), daemon=True).start()
+                    if filepath:
+                        threading.Thread(target=open_file, args=(filepath,), daemon=True).start()
                     self.send_response(200)
-                    self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self._set_file_download_headers(filename)
                     self.end_headers()
                     self.wfile.write(file_data)
                 else:
