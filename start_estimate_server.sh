@@ -13,6 +13,8 @@ fi
 # UTF-8 인코딩 강제 설정
 export PYTHONIOENCODING=utf-8
 
+: "${PYTHON_BIN:=python3}"
+
 echo "======================================"
 echo "견적서 생성 서버 시작"
 echo "======================================"
@@ -27,4 +29,4 @@ else
 fi
 echo ""
 
-python3 estimate_server.py
+"$PYTHON_BIN" estimate_server.py

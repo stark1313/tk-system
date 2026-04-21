@@ -30,6 +30,66 @@ HTML/CSS/JavaScript 기반의 주문관리 시스템입니다. 프런트엔드�
    - ./start_estimate_server.sh
 6. index.html을 Live Server 등으로 열어 사용합니다.
 
+## 맥북 다시 켠 뒤 빠른 재기동
+1. 터미널을 열고 프로젝트 폴더로 이동합니다.
+2. 한 번에 실행하려면 아래 명령만 입력합니다.
+
+```bash
+./start_local_dev.sh
+```
+
+3. 브라우저에서 아래 주소로 접속합니다.
+   - http://127.0.0.1:3000/index.html
+   - http://127.0.0.1:3000/pages/transaction_detail.html?id=2026-0022
+4. 실행 상태 확인이 필요하면 아래를 사용합니다.
+
+```bash
+./status_local_dev.sh
+```
+
+5. 서버를 모두 끌 때는 아래를 사용합니다.
+
+```bash
+./stop_local_dev.sh
+```
+
+### 이 프로젝트에서 올라가는 서버
+- 정적 프런트엔드 서버: 3000번 포트
+- Python API 서버: 5050번 포트
+
+## 맥 로그인 시 자동 시작 설정
+한 번만 설정하면, 로그인할 때마다 정적 서버(3000)와 API 서버(5050)가 자동으로 시작됩니다.
+
+1. 프로젝트 폴더에서 설치 스크립트를 실행합니다.
+
+```bash
+chmod +x install_auto_start.sh disable_auto_start.sh auto_start_status.sh
+./install_auto_start.sh
+```
+
+2. 상태를 확인합니다.
+
+```bash
+./auto_start_status.sh
+```
+
+3. 자동 시작을 해제하려면 아래를 실행합니다.
+
+```bash
+./disable_auto_start.sh
+```
+
+참고:
+- LaunchAgent 파일 위치: ~/Library/LaunchAgents/com.tk_system.localdev.plist
+- 로그인 후 서버 로그:
+   - /tmp/tk_system/launchd_stdout.log
+   - /tmp/tk_system/launchd_stderr.log
+
+### ERR_CONNECTION_REFUSED가 뜰 때 확인할 것
+- 3000번 포트가 안 떠 있으면 페이지 자체가 열리지 않습니다.
+- 5050번 포트가 안 떠 있으면 페이지는 열려도 데이터 저장, 문서 생성, 동기화가 실패합니다.
+- js/app_config.js는 로컬에서 API 주소를 자동으로 http://localhost:5050 으로 맞추므로, 보통은 3000과 5050만 다시 띄우면 됩니다.
+
 ## 로컬 개발용 환경변수 예시
 
 ```bash
