@@ -18,6 +18,7 @@ from io import BytesIO
 from urllib.parse import quote, urlparse
 
 from openpyxl import load_workbook
+from openpyxl.cell.cell import MergedCell
 
 try:
     from supabase import Client, create_client
@@ -99,15 +100,62 @@ def parse_delivery_month(value):
     return None
 
 
-def apply_estimate_overrides(ws, data):
-    # A7 must always be the sum of amount rows.
-    ws["A7"].value = "=SUM(F9:F28)"
-
-    # A2 display format: yyyy"년" m"월"
-    delivery_month = parse_delivery_month(data.get("deliveryMonth", ""))
+def format_delivery_month(value):
+    delivery_month = parse_delivery_month(value)
     if delivery_month:
-        ws["A2"].value = delivery_month
-        ws["A2"].number_format = 'yyyy"년" m"월"'
+        return f"{delivery_month.year}년 {delivery_month.month}월  일"
+
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    return f"{raw}  일"
+
+
+def number_to_korean(n):
+    """정수를 한글 금액 표기로 변환 (예: 3000 → 삼천)"""
+    n = int(round(float(n)))
+    if n == 0:
+        return '영'
+    digits = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구']
+    units = ['', '십', '백', '천']
+    big_units = ['', '만', '억', '조']
+    result = ''
+    big_unit_idx = 0
+    while n > 0:
+        chunk = n % 10000
+        if chunk != 0:
+            chunk_str = ''
+            for pos in range(3, -1, -1):
+                digit = (chunk // (10 ** pos)) % 10
+                if digit == 0:
+                    continue
+                if digit == 1 and pos > 0:
+                    chunk_str += units[pos]
+                else:
+                    chunk_str += digits[digit] + units[pos]
+            result = chunk_str + big_units[big_unit_idx] + result
+        n //= 10000
+        big_unit_idx += 1
+    return result
+
+
+def format_total_amount(total):
+    amount = int(round(float(total)))
+    return f"₩ {amount:,} (金 {number_to_korean(amount)}원정)"
+
+
+def apply_estimate_overrides(ws, data):
+    total = sum(
+        float(item.get("quantity", 0) or 0) * float(item.get("unitPrice", 0) or 0)
+        for item in data.get("items", [])
+    )
+
+    delivery_month_text = format_delivery_month(data.get("deliveryMonth", ""))
+    if delivery_month_text:
+        ws["A2"].value = delivery_month_text
+
+    ws["A7"].value = total
+    ws["A7"].number_format = '"합계금액:"#,##0"원"'
 
 
 def build_estimate_filename(data):
@@ -136,6 +184,20 @@ def copy_cell_style(source_cell, target_cell):
             target_cell.alignment = copy(source_cell.alignment)
     except Exception:
         pass
+
+
+def set_cell_value_safe(ws, row_num, col_idx, value):
+    cell = ws.cell(row=row_num, column=col_idx)
+    if isinstance(cell, MergedCell):
+        for merged in ws.merged_cells.ranges:
+            if (
+                merged.min_row <= row_num <= merged.max_row
+                and merged.min_col <= col_idx <= merged.max_col
+            ):
+                ws.cell(row=merged.min_row, column=merged.min_col).value = value
+                return
+        return
+    cell.value = value
 
 
 def replace_variables(ws, data):
@@ -172,35 +234,56 @@ def replace_variables(ws, data):
                     if ph in cell.value:
                         item_col_map[cell.column] = field
 
-    # 품목 데이터 채우기
+    # 품목 데이터 채우기 (품목 개수에 맞춰 행을 늘려 하단 영역을 자동으로 아래로 이동)
     if item_template_row and item_col_map:
-        max_item_rows = 20
-        for idx in range(max_item_rows):
-            row_num = item_template_row + idx
-            item = items[idx] if idx < len(items) else None
+        render_item_count = max(len(items), 1)
+        insert_count = max(render_item_count - 1, 0)
 
-            # 첫 행 이후는 스타일 복사
-            if idx > 0:
-                for col_idx in item_col_map:
+        if insert_count > 0:
+            ws.insert_rows(item_template_row + 1, amount=insert_count)
+
+            template_row_height = ws.row_dimensions[item_template_row].height
+            template_row_merges = [
+                merged for merged in ws.merged_cells.ranges
+                if merged.min_row == item_template_row and merged.max_row == item_template_row
+            ]
+
+            for offset in range(1, render_item_count):
+                row_num = item_template_row + offset
+                if template_row_height is not None:
+                    ws.row_dimensions[row_num].height = template_row_height
+
+                for col_idx in range(1, ws.max_column + 1):
                     source_cell = ws.cell(row=item_template_row, column=col_idx)
                     target_cell = ws.cell(row=row_num, column=col_idx)
                     copy_cell_style(source_cell, target_cell)
 
+                for merged in template_row_merges:
+                    ws.merge_cells(
+                        start_row=row_num,
+                        start_column=merged.min_col,
+                        end_row=row_num,
+                        end_column=merged.max_col,
+                    )
+
+        for idx in range(render_item_count):
+            row_num = item_template_row + idx
+            item = items[idx] if idx < len(items) else None
+
             for col_idx, field in item_col_map.items():
-                target_cell = ws.cell(row=row_num, column=col_idx)
                 if item:
                     if field == "quantity":
-                        target_cell.value = float(item.get("quantity", 0) or 0)
+                        set_cell_value_safe(ws, row_num, col_idx, float(item.get("quantity", 0) or 0))
                     elif field == "unitPrice":
-                        target_cell.value = float(item.get("unitPrice", 0) or 0)
+                        set_cell_value_safe(ws, row_num, col_idx, float(item.get("unitPrice", 0) or 0))
                     elif field == "amount":
                         qty = float(item.get("quantity", 0) or 0)
                         price = float(item.get("unitPrice", 0) or 0)
-                        target_cell.value = qty * price
+                        set_cell_value_safe(ws, row_num, col_idx, qty * price)
                     else:
-                        target_cell.value = item.get(field, "")
+                        set_cell_value_safe(ws, row_num, col_idx, item.get(field, ""))
                 else:
-                    target_cell.value = ""
+                    set_cell_value_safe(ws, row_num, col_idx, "")
 
     # 합계 계산
     total = sum(
@@ -209,12 +292,22 @@ def replace_variables(ws, data):
     )
 
     # 나머지 플레이스홀더 치환 (품목 행 제외)
+    customer = data.get("customer", "")
     replacements = {
-        "{납품월}": data.get("deliveryMonth", ""),
-        "{거래처명}": data.get("customer", ""),
+        "{납품월}": format_delivery_month(data.get("deliveryMonth", "")),
+        "{거래처명}": customer,
         "{공사명}": data.get("projectName", ""),
-        "{합계}": f"{int(total):,}" if total == int(total) else f"{total:,.0f}",
+        "{합계}": format_total_amount(total),
     }
+
+    # 마지막 {거래처명} 셀 위치 미리 탐색
+    last_customer_cell = None
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value and isinstance(cell.value, str) and "{거래처명}" in cell.value:
+                is_item_ph = any(ph in cell.value for ph in ITEM_PLACEHOLDERS)
+                if not is_item_ph:
+                    last_customer_cell = (cell.row, cell.column)
 
     for row in ws.iter_rows():
         for cell in row:
@@ -222,11 +315,21 @@ def replace_variables(ws, data):
                 # 품목 플레이스홀더가 남은 셀은 빈 문자열로 처리
                 is_item_placeholder = any(ph in cell.value for ph in ITEM_PLACEHOLDERS)
                 if is_item_placeholder:
-                    cell.value = ""
+                    set_cell_value_safe(ws, cell.row, cell.column, "")
+                    continue
+                # 마지막 {거래처명}: 각 글자를 공백 4칸으로 분리
+                if "{거래처명}" in cell.value and last_customer_cell == (cell.row, cell.column):
+                    ph = "{거래처명}"
+                    idx = cell.value.find(ph)
+                    prefix = cell.value[:idx].rstrip()
+                    suffix = cell.value[idx + len(ph):].lstrip()
+                    all_chars = list(prefix) + list(customer) + list(suffix)
+                    spaced = '    '.join(all_chars)
+                    set_cell_value_safe(ws, cell.row, cell.column, spaced)
                     continue
                 for placeholder, value in replacements.items():
                     if placeholder in cell.value:
-                        cell.value = cell.value.replace(placeholder, str(value))
+                        set_cell_value_safe(ws, cell.row, cell.column, cell.value.replace(placeholder, str(value)))
     
     # 모든 셀값 정규화 (한글 문자열이 올바르게 처리되도록)
     import unicodedata

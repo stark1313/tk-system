@@ -37,7 +37,7 @@ def replace_variables(ws, data):
     # 단순 변수 치환: {변수명}
     replacements = {
         '{납품월}': data.get('deliveryMonth', ''),
-        '{거래처명}': data.get('customer', ''),
+        '{거래처명}': data.get('customer', '') + '사무소',
         '{공사명}': data.get('projectName', ''),
     }
     
@@ -77,6 +77,20 @@ def replace_variables(ws, data):
         ws[f'F{row_num}'].value = amount
         ws[f'G{row_num}'].value = item.get('remark', '')
 
+
+def parse_delivery_month(value):
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+
+    for fmt in ('%Y-%m', '%Y-%m-%d', '%Y.%m', '%Y/%m'):
+        try:
+            parsed = datetime.strptime(raw, fmt)
+            return f'{parsed.year}년  {parsed.month}월  일'
+        except ValueError:
+            continue
+    return f'{raw}  일'
+
 def generate_estimate(data):
     """견적서 Excel 생성"""
     try:
@@ -89,6 +103,13 @@ def generate_estimate(data):
         
         # 합계 계산
         total = sum(float(ws[f'F{row}'].value or 0) for row in range(9, 29))
+
+        delivery_month = parse_delivery_month(data.get('deliveryMonth', ''))
+        if delivery_month:
+            ws['A2'].value = delivery_month
+
+        ws['A7'].value = total
+        ws['A7'].number_format = '"합계금액:"#,##0"원"'
         
         # 합계 셀에 입력 (기존 포뮬라가 있는 곳)
         ws['F11'].value = total
